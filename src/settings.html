@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./settings.css" />
+</head>
+<body>
+  <!--
+    Eigenes Fenster: der ganze Hintergrund ist Drag-Region, alle Bedienelemente
+    sind no-drag. Das Acryl-Material des Fensters blurrt den Desktop dahinter.
+  -->
+  <div id="card">
+    <header id="head">
+      <span class="led"></span>
+      <h1>bloub pad settings</h1>
+      <button id="close" class="no-drag" title="Close" aria-label="Close settings">×</button>
+    </header>
+
+    <main id="scroll">
+      <section>
+        <h2>Expression</h2>
+        <div class="pills" id="expr-pills"></div>
+      </section>
+      <section>
+        <h2>Shape</h2>
+        <div class="pills" id="shape-pills"></div>
+      </section>
+      <section>
+        <h2>Color</h2>
+        <div id="color-row"></div>
+      </section>
+      <section>
+        <h2>Size</h2>
+        <input type="range" id="size-range" min="150" max="280" step="10" />
+      </section>
+      <section class="row-between">
+        <label class="toggle">
+          <input type="checkbox" id="events-toggle" />
+          Random events
+        </label>
+        <button id="quit-btn">Quit pad</button>
+      </section>
+    </main>
+    <!-- sichtbarer Griff unten rechts; das Ziehen selbst uebernehmen die Randzonen -->
+    <div id="grip" aria-hidden="true"></div>
+  </div>
+  <!--
+    Ziehzonen am FENSTERRAND statt an der Karte: Faellt das Acrylic aus, ist der
+    sichtbare Rand die Fensterkante, nicht die Kartenkante (8px Margin).
+  -->
+  <div class="rz rz-n" data-dir="n" aria-hidden="true"></div>
+  <div class="rz rz-s" data-dir="s" aria-hidden="true"></div>
+  <div class="rz rz-e" data-dir="e" aria-hidden="true"></div>
+  <div class="rz rz-w" data-dir="w" aria-hidden="true"></div>
+  <div class="rz rz-ne" data-dir="ne" aria-hidden="true"></div>
+  <div class="rz rz-nw" data-dir="nw" aria-hidden="true"></div>
+  <div class="rz rz-se" data-dir="se" aria-hidden="true"></div>
+  <div class="rz rz-sw" data-dir="sw" aria-hidden="true"></div>
+  <script type="module" src="./settings.ts"></script>
+</body>
+</html>
