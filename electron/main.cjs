@@ -96,7 +96,9 @@ function loadConfig() {
     ballSize: 200,
     eventsEnabled: true,
     screenshotAllDisplays: true,
-    globalCursorTracking: true
+    globalCursorTracking: true,
+    /** Beim PC-Start automatisch starten (Login-Item). Default AUS. */
+    autostart: false
   }
   try {
     config = { ...fallback, ...JSON.parse(fs.readFileSync(configPath(), 'utf8')) }
@@ -109,6 +111,7 @@ function loadConfig() {
   // recall-Abschnitt ebenso (OFF by default — nichts vor Consent)
   config.recall = { ...recallMod.recallDefaults(), ...(config.recall ?? {}) }
   syncSystemDriveGrant()
+  applyAutoStart()
   return config
 }
 
@@ -146,6 +149,36 @@ function saveConfig() {
 function broadcastConfig() {
   for (const w of [win, settingsWin]) {
     if (w && !w.isDestroyed()) w.webContents.send('config:changed', config)
+  }
+}
+
+/** Autostart beim PC-Start ueber ein Login-Item abgleichen (Win/macOS). */
+function applyAutoStart() {
+  const enabled = !!config.autostart
+  if (process.platform === 'linux') {
+    // Linux: kein Login-Item-API — best effort via XDG-Autostart-Datei.
+    try {
+      const dir = path.join(app.getPath('userData'), '..', 'autostart')
+      const file = path.join(dir, 'bloub-pet.desktop')
+      if (enabled) {
+        fs.mkdirSync(dir, { recursive: true })
+        const execPath = process.execPath
+        fs.writeFileSync(
+          file,
+          `[Desktop Entry]\nType=Application\nName=Bloub Pet\nExec="${execPath}"\nX-GNOME-Autostart-enabled=true\n`
+        )
+      } else if (fs.existsSync(file)) {
+        fs.unlinkSync(file)
+      }
+    } catch {
+      /* best effort */
+    }
+    return
+  }
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled })
+  } catch {
+    /* best effort */
   }
 }
 
@@ -383,11 +416,35 @@ function drawReady() {
   })
 }
 
-/** SVG im Overlay auf den aktuellen Pfad setzen (d-String). */
-function drawSetPath(w, d, color, width = 3) {
-  const code = `(function(){var s=document.getElementById('draw-canvas');` +
-    `s.innerHTML='<path d="${d.replace(/\\/g, '\\\\').replace(/"/g, '&quot;')}" ` +
-    `stroke="${color}" stroke-width="${width}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';})()`
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Aktiv-Zeitzustand der Zeichenflaeche. Linien akkumulieren ueber MEHRERE
+ * pet_draw_path-Calls hinweg (damit die AI z. B. zwei Drawings mit zwei
+ * unterschiedlichen Toolcodes zeichnen kann) und werden erst 1,5 s NACH
+ * Abschluss des gesamten Turns ausgeblendet (siehe queueDrawHide).
+ */
+let drawActive = false
+let drawSegments = [] // { d, color, width } — fertig gemalte Pfade dieses Turns
+let drawHideTimer = null
+
+/** Overlay von Grund auf aus drawSegments + einem wachsenden Pfad rendern. */
+function renderDrawSvg(w, activeD, activeColor, activeWidth) {
+  const segs = []
+  for (const s of drawSegments) segs.push({ d: s.d, color: s.color, width: s.width })
+  if (activeD) segs.push({ d: activeD, color: activeColor, width: activeWidth })
+  const paths = segs
+    .map(
+      (seg) =>
+        `(function(){var n=document.createElementNS('http://www.w3.org/2000/svg','path');` +
+        `n.setAttribute('d',${JSON.stringify(seg.d)});` +
+        `n.setAttribute('stroke',${JSON.stringify(seg.color)});` +
+        `n.setAttribute('stroke-width',${JSON.stringify(seg.width)});` +
+        `n.setAttribute('fill','none');n.setAttribute('stroke-linecap','round');` +
+        `n.setAttribute('stroke-linejoin','round');s.appendChild(n);})();`
+    )
+    .join('')
+  const code = `(function(){var s=document.getElementById('draw-canvas');s.innerHTML='';${paths}})()`
   return w.webContents.executeJavaScript(code)
 }
 
@@ -395,7 +452,26 @@ function drawClear(w) {
   return w.webContents.executeJavaScript(`(function(){var s=document.getElementById('draw-canvas');s.innerHTML='';})()`)
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+/**
+ * Zeichenflaeche 1,5 s, nachdem ein Turn komplett abgeschlossen ist, ausblenden
+ * und fuer den naechsten Turn zuruecksetzen. Wird bei jedem 'done'-Event
+ * (Generation fertig) oder bei Abbruch neu angestossen, damit mehrere
+ * pet_draw_path-Calls desselben Turns sichtbar bleiben.
+ */
+function queueDrawHide() {
+  if (drawHideTimer) clearTimeout(drawHideTimer)
+  drawHideTimer = setTimeout(() => {
+    drawHideTimer = null
+    drawActive = false
+    drawSegments = []
+    if (drawWin && !drawWin.isDestroyed()) drawWin.hide()
+    // Lock freigeben, damit der Bloub wieder in normalen Zustand zurueckkehrt
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('pet:anim-hold', false)
+      win.webContents.send('pet:play-state', 'wink')
+    }
+  }, 1500)
+}
 
 /**
  * pet_draw_path: bewegt das Pet-Fenster (Bloub) Punkt fuer Punkt ueber den
@@ -410,7 +486,12 @@ async function drawPathOnScreen({ points, color }) {
     if (!points || points.length < 2) return { ok: false, error: 'need at least 2 points' }
     const w = await drawReady()
     w.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height })
-    await drawClear(w)
+    // Neuer Turn? Dann leere Flaeche; sonst reichen die bisherigen Pfade weiter.
+    if (!drawActive) {
+      drawActive = true
+      drawSegments = []
+      await drawClear(w)
+    }
     w.showInactive()
     w.moveTop()
 
@@ -421,10 +502,14 @@ async function drawPathOnScreen({ points, color }) {
       win.moveTop()
     }
 
-    // Pinsel-Animation des Bloub starten
-    if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'alert', 60)
+    // Pinsel-Animation des Bloub starten und den Zustand bis zum Turn-Ende halten
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('pet:anim-hold', true)
+      win.webContents.send('pet:play-state', 'alert')
+    }
 
     const ink = color || '#e8483f'
+    const lineWidth = 3
     const pts = points.map((p) => ({
       x: Math.min(Math.max(Math.round(p.x), workArea.x), workArea.x + workArea.width),
       y: Math.min(Math.max(Math.round(p.y), workArea.y), workArea.y + workArea.height),
@@ -436,11 +521,11 @@ async function drawPathOnScreen({ points, color }) {
     let current = { x: winX + CX, y: winY + CY }
     const cmds = []
     let needMove = true // nach einem "pen up"-Sprung wieder mit M statt L weitermachen
-    const pushTo = (px, py, draw) => {
+    const pushTo = (px, py, draw, target) => {
       if (draw) {
         cmds.push(`${needMove ? 'M' : 'L'} ${px} ${py}`)
         needMove = false
-        return drawSetPath(w, cmds.join(' '), ink)
+        return renderDrawSvg(w, cmds.join(' '), target.ink || ink, lineWidth)
       }
       needMove = true
       return Promise.resolve()
@@ -466,23 +551,27 @@ async function drawPathOnScreen({ points, color }) {
         }
         config.x = nx
         config.y = ny
-        await pushTo(px, py, target.draw)
+        await pushTo(px, py, target.draw, target)
         await sleep(16)
       }
       current = { x: target.x, y: target.y }
     }
     saveConfig()
 
-    // Linie kurz stehen lassen, dann ausblenden
-    await sleep(1500)
-    w.hide()
-    if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
+    // Fertig gemalten Pfad dieses Calls einfrieren, damit nachfolgende Calls
+    // ihn NICHT ueberschreiben — die Linie bleibt bis zum Turn-Ende stehen.
+    if (cmds.length > 0) {
+      drawSegments.push({ d: cmds.join(' '), color: ink, width: lineWidth })
+    }
     return {
       ok: true,
       workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }
     }
   } catch (err) {
     if (drawWin && !drawWin.isDestroyed()) drawWin.hide()
+    drawActive = false
+    drawSegments = []
+    if (win && !win.isDestroyed()) win.webContents.send('pet:anim-hold', false)
     return { ok: false, error: err?.message || String(err) }
   }
 }
@@ -804,6 +893,10 @@ function getChat() {
 function sendChatEvent(ev) {
   // Das Chat-Dock lebt im Pet-Fenster — Events gehen dorthin
   if (win && !win.isDestroyed()) win.webContents.send('chat:event', ev)
+  // Zeichnung: die Linien bleiben sichtbar, bis der Turn komplett fertig ist —
+  // dann 1,5 s stehen lassen und ausblenden. Ermoeglicht mehrere
+  // pet_draw_path-Calls (z. B. zwei Drawings mit zwei Toolcodes).
+  if (ev.type === 'done') queueDrawHide()
 }
 
 let chatVisible = false
@@ -1086,7 +1179,11 @@ ipcMain.handle('chat:send', async (_e, payload) => {
   return true
 })
 
-ipcMain.on('chat:abort', () => getChat().abort())
+ipcMain.on('chat:abort', () => {
+  getChat().abort()
+  // Bei Abbruch mitten im Turn die Zeichenflaeche ebenfalls nach kurzer Zeit ausblenden
+  queueDrawHide()
+})
 
 ipcMain.handle('chat:test-provider', async () => {
   const cfgChat = {
@@ -1378,6 +1475,7 @@ ipcMain.handle('config:get', () => config)
 ipcMain.handle('config:set', (_e, partial) => {
   Object.assign(config, partial)
   syncSystemDriveGrant()
+  applyAutoStart()
   saveConfig()
   broadcastConfig()
   scheduleAutoPilot()

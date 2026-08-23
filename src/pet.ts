@@ -26,6 +26,9 @@ let bot: ReturnType<typeof makeBotSvg>
 
 let clock = 0
 let busyUntil = 0
+/** Animations-Lock: solange aktiv, bleibt der aktuelle Zustand stehen und
+ * der Bloub geht weder idle noch sleep — bis er explizit freigegeben wird. */
+let animHold = false
 let nextEventAt = Infinity
 let lastInteraction = -10
 let dragging = false
@@ -75,7 +78,7 @@ function applyConfig() {
 function playOnce(id: string, customDuration?: number) {
   if (id === 'stop' || id === 'idle') {
     engine.setState('idle', clock)
-    busyUntil = 0
+    busyUntil = animHold ? Infinity : 0
     isAiThinking = false
     isAiStreaming = false
     return
@@ -88,7 +91,25 @@ function playOnce(id: string, customDuration?: number) {
   const hold = typeof customDuration === 'number' && customDuration > 0
     ? customDuration
     : Math.max(def.duration ?? 2.4, def.minDuration ?? 0)
-  busyUntil = clock + hold
+  // Bei aktivem Lock bleibt der Zustand stehen, bis er explizit freigegeben wird.
+  busyUntil = animHold ? Infinity : clock + hold
+}
+
+/**
+ * Animations-Lock vom Main-Prozess: haelt den aktuellen Zustand des Bloub
+ * fest, bis die Aktion (z. B. das Zeichnen) fertig ist. Beim Freigeben kehrt
+ * er normal zurueck (idle bzw. Talk im Stream).
+ */
+function setAnimHold(hold: boolean) {
+  animHold = hold
+  if (hold) {
+    busyUntil = Infinity
+  } else {
+    busyUntil = clock
+    if (!isAiThinking && !isAiStreaming && engine.state !== 'idle') {
+      engine.setState('idle', clock)
+    }
+  }
 }
 
 const IDLE_POOL: Array<[StateId, number]> = [
@@ -760,6 +781,9 @@ bridge.onConfigChanged((fresh) => {
 // Ein-Shots aus dem Main-Prozess (absorb beim Drop, wink nach der Antwort, Bot-Tools)
 bridge.onPlayState?.((id, duration) => playOnce(id, duration))
 
+// Animations-Lock: haelt den Zustand, bis die Aktion (z. B. Zeichnen) fertig ist.
+bridge.onAnimationHold?.((hold) => setAnimHold(hold))
+
 // Custom-Animationen aus dem Bot-Tool pet_custom_animate
 bridge.onCustomAnim?.((spec) => startCustomAnim(spec))
 
@@ -864,7 +888,10 @@ function tick(ms: number) {
 
   const inactiveDuration = clock - lastActivityAt
 
-  if (dragOverActive) {
+  if (animHold) {
+    // Lock aktiv: Zustand festhalten, nichts ueberschreiben (Alert beim Zeichnen etc.)
+    // tickCustomAnim() laeuft weiter unten ohnehin an.
+  } else if (dragOverActive) {
     // Vortex laeuft solange, bis Drop oder Drag-Leave — kein Sleep, kein Idle
     tickDragVortex()
   } else if (isAiThinking) {

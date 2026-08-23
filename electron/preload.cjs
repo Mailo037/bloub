@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('bloubPet', {
   toggleChat: () => ipcRenderer.send('pet:request-chat-toggle'),
   attachPaths: (paths) => ipcRenderer.invoke('chat:attach', paths),
   onPlayState: (cb) => ipcRenderer.on('pet:play-state', (_e, id, duration) => cb(id, duration)),
+  onAnimationHold: (cb) => ipcRenderer.on('pet:anim-hold', (_e, hold) => cb(hold)),
   onChatVisibility: (cb) => ipcRenderer.on('ui:chat-visibility', (_e, visible) => cb(visible)),
   onCustomAnim: (cb) => ipcRenderer.on('pet:custom-anim', (_e, spec) => cb(spec)),
   notifyCustomAnimDone: (id) => ipcRenderer.send('pet:custom-anim-done', id),

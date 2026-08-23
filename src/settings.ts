@@ -49,6 +49,15 @@ const globalCursorSwitch = createSwitch({
 })
 document.getElementById('global-cursor-slot')!.replaceChildren(globalCursorSwitch.el)
 
+// Beim PC-Start automatisch starten (Login-Item)
+const autostartSwitch = createSwitch({
+  label: 'Start with PC',
+  onChange: (checked) => {
+    void bridge.updateConfig({ autostart: checked })
+  }
+})
+document.getElementById('autostart-toggle-slot')!.replaceChildren(autostartSwitch.el)
+
 // Globale Dateizugriffs-Stufe: none / read / readwrite
 const fileAccessSeg = createSegmented({
   options: [
@@ -301,6 +310,7 @@ bridge.onConfigChanged((fresh) => {
   eventsSwitch.setValue(config.eventsEnabled)
   screenshotAllSwitch.setValue(config.screenshotAllDisplays !== false)
   globalCursorSwitch.setValue(config.globalCursorTracking !== false)
+  autostartSwitch.setValue(!!config.autostart)
   syncChatFields()
   renderGrants(config.chat?.grants ?? [])
   updateAboutAvatar()
@@ -865,12 +875,14 @@ const recallBrowserSeg = createSegmented({
 document.getElementById('recall-browser-slot')!.replaceChildren(recallBrowserSeg.el)
 
 const recallPauseIndicator = document.getElementById('recall-pause-indicator')!
+const recallPauseDot = document.getElementById('recall-pause-dot')!
 const recallPauseBtn = document.getElementById('recall-pause-btn') as HTMLButtonElement
 recallPauseBtn.addEventListener('click', () => {
   void bridge.recallTogglePause?.()
 })
 
 const recallShellStatus = document.getElementById('recall-shell-status')!
+const recallShellDot = document.getElementById('recall-shell-dot')!
 const shellInstallBtn = document.getElementById('recall-shell-install-btn') as HTMLButtonElement
 const shellRemoveBtn = document.getElementById('recall-shell-remove-btn') as HTMLButtonElement
 
@@ -934,13 +946,17 @@ retentionInput.addEventListener('change', () => {
   const days = Math.min(365, Math.max(1, Math.round(Number(retentionInput.value) || 14)))
   retentionInput.value = String(days)
   void bridge.recallSetConfig?.({ retentionDays: days })
+  storageMsg.textContent = `retention set to ${days} days`
 })
 
-const storageLine = document.getElementById('recall-storage-line')!
+const storageMsg = document.getElementById('recall-storage-line')!
+const storageEventsEl = document.getElementById('recall-storage-events')!
+const storageSizeEl = document.getElementById('recall-storage-size')!
+const storageOldestEl = document.getElementById('recall-storage-oldest')!
 
 document.getElementById('recall-index-now-btn')?.addEventListener('click', () => {
   void bridge.recallIndexNow?.()?.then((r) => {
-    storageLine.textContent = `indexing… ${r.indexed} new events folded in`
+    storageMsg.textContent = `indexing… ${r.indexed} new events folded in`
     setTimeout(() => void refreshRecallStatus(), 800)
   })
 })
@@ -954,13 +970,18 @@ document.getElementById('recall-purge-btn')?.addEventListener('click', () => {
   }).then((ok) => {
     if (!ok) return
     void bridge.recallPurge?.()?.then(({ freed }) => {
-      storageLine.textContent = `purged (~${Math.max(1, Math.round(freed / 1024))} KB freed)`
+      storageMsg.textContent = `purged (~${Math.max(1, Math.round(freed / 1024))} KB freed)`
       void refreshRecallStatus()
     })
   })
 })
 
 let lastRecallStatus: RecallStatus | null = null
+
+/** Setzt den Status-Punkt (on/warn/off) anhand eines Zustands. */
+function setRecallDot(el: HTMLElement, state: 'on' | 'warn' | 'off' | 'idle') {
+  el.className = `recall-status-dot ${state === 'idle' ? '' : state}`.trim()
+}
 
 async function refreshRecallStatus() {
   const st = await bridge.recallGetStatus?.()
@@ -969,30 +990,50 @@ async function refreshRecallStatus() {
   // Pause-Anzeige spiegelt den Tray-Zustand
   if (!st.enabled) {
     recallPauseIndicator.textContent = 'Recording off'
+    setRecallDot(recallPauseDot, 'off')
     recallPauseBtn.disabled = true
   } else if (st.autoPaused) {
     recallPauseIndicator.textContent = 'Auto-paused (sensitive window)'
+    setRecallDot(recallPauseDot, 'warn')
     recallPauseBtn.disabled = true
   } else if (st.manualPaused) {
     recallPauseIndicator.textContent = 'Paused'
+    setRecallDot(recallPauseDot, 'warn')
     recallPauseBtn.disabled = false
     recallPauseBtn.textContent = 'Resume'
   } else {
     recallPauseIndicator.textContent = 'Recording'
+    setRecallDot(recallPauseDot, 'on')
     recallPauseBtn.disabled = false
     recallPauseBtn.textContent = 'Pause now'
   }
   // Shell-Hook-Status
   const hooks = st.shellHooks ?? []
   const installed = hooks.filter((h) => h.installed).length
-  recallShellStatus.textContent =
-    hooks.length === 0
-      ? 'no PowerShell profiles found'
-      : `${installed}/${hooks.length} profiles hooked`
-  // Storage
-  const bytes = st.storage?.bytes ?? 0
-  const lines = st.storage?.lines ?? 0
-  storageLine.textContent = `${lines.toLocaleString()} events · ${(bytes / 1024).toFixed(0)} KB on disk`
+  if (hooks.length === 0) {
+    recallShellStatus.textContent = 'No PowerShell profile found'
+    setRecallDot(recallShellDot, 'off')
+  } else if (installed === 0) {
+    recallShellStatus.textContent = 'Not hooked — install below'
+    setRecallDot(recallShellDot, 'off')
+    shellRemoveBtn.disabled = true
+  } else if (installed < hooks.length) {
+    recallShellStatus.textContent = `${installed}/${hooks.length} profiles hooked`
+    setRecallDot(recallShellDot, 'warn')
+    shellRemoveBtn.disabled = false
+  } else {
+    recallShellStatus.textContent = `${installed} profile${installed === 1 ? '' : 's'} hooked`
+    setRecallDot(recallShellDot, 'on')
+    shellRemoveBtn.disabled = false
+  }
+  // Storage-Summary
+  const { bytes, lines, oldestTs } = st.storage ?? { bytes: 0, lines: 0, oldestTs: null }
+  storageEventsEl.textContent = lines.toLocaleString()
+  storageSizeEl.textContent = `${(bytes / 1024).toFixed(0)} KB`
+  storageOldestEl.textContent = oldestTs
+    ? new Date(oldestTs).toLocaleDateString()
+    : '—'
+  storageMsg.textContent = `Retention: ${config.recall?.retentionDays ?? 14} days`
 }
 
 /** Felder aus der frischen Config befuellen (ohne Fokus-Override). */
@@ -1067,6 +1108,7 @@ async function init() {
   eventsSwitch.setValue(config.eventsEnabled)
   screenshotAllSwitch.setValue(config.screenshotAllDisplays !== false)
   globalCursorSwitch.setValue(config.globalCursorTracking !== false)
+  autostartSwitch.setValue(!!config.autostart)
   buildPills()
   refreshSelections()
   syncChatFields()

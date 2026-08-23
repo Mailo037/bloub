@@ -138,7 +138,7 @@ h1 {
 
 #tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 3px;
   padding: 3px;
   border-radius: 11px;
@@ -478,6 +478,141 @@ h2 {
 
 .grant-chip .shield.on {
   opacity: 1;
+}
+
+/* ------------------------------------------------------ activity recall */
+
+/* Statuszeile: kleiner Punkt + Text, wie der Update-Indikator. */
+.recall-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.recall-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #737373;
+  flex-shrink: 0;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.recall-status-dot.on {
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+
+.recall-status-dot.warn {
+  background: #fbbf24;
+  box-shadow: 0 0 6px #fbbf24;
+}
+
+.recall-status-dot.off {
+  background: #f87171;
+  box-shadow: 0 0 6px #f87171;
+}
+
+/* Button-Zeilen: Aktionen rechtsbuendig gruppieren, mit etwas Abstand. */
+.recall-btn-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.recall-btn-row .k-action-btn {
+  margin-top: 2px;
+}
+
+/* Danger-Variante fuer destruktive Aktionen (Remove hooks / Purge). */
+.k-action-btn.danger {
+  border-color: rgba(232, 72, 63, 0.4);
+  background: rgba(232, 72, 63, 0.08);
+  color: #ff7a70;
+}
+
+.k-action-btn.danger:hover {
+  background: rgba(232, 72, 63, 0.18);
+  border-color: rgba(232, 72, 63, 0.6);
+}
+
+/* Storage-Summary: drei kompakte Kacheln. */
+.recall-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.recall-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 4px 7px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.recall-stat-num {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recall-stat-label {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+/* Retention: Zahl + Einheit in einer Zeile. */
+.fld-suffix {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.fld-suffix input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fld-unit {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* Storage-Aktionen: Gefaehrliche Aktion hervorheben, Infozeile darunter. */
+.recall-storage-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recall-storage-actions .k-action-btn.danger {
+  margin-left: auto;
+}
+
+.recall-storage-msg {
+  margin: 8px 0 0;
+  min-height: 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
 }
 
 /* --------------------------------------------------- resize ziehzonen */

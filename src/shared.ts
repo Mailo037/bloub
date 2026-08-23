@@ -113,6 +113,8 @@ export type PetConfigShape = {
   screenshotAllDisplays?: boolean
   /** Globaler Cursor-Follow ueber alle Monitore (Blick + ID-Tag). */
   globalCursorTracking?: boolean
+  /** Beim PC-Start automatisch starten (Login-Item). Default aus. */
+  autostart?: boolean
   chat?: Partial<ChatConfig>
   recall?: Partial<RecallConfig>
 }
@@ -261,6 +263,8 @@ export interface PetBridge {
   attachPaths?(paths: string[]): Promise<void>
   pathForFile?(file: File): string
   onPlayState?(cb: (id: string, duration?: number) => void): void
+  /** Animations-Lock vom Main: haelt den Zustand, bis die Aktion fertig ist. */
+  onAnimationHold?(cb: (hold: boolean) => void): void
   /** Dock-Sichtbarkeit im Pet-Fenster (main-gesteuert) */
   onChatVisibility?(cb: (visible: boolean) => void): void
   /** Custom-Animation vom Main-Prozess (pet window) */
