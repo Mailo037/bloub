@@ -1157,7 +1157,7 @@ function getDetailedSpecs() {
 
   return {
     appName: 'Bloub Pet',
-    appVersion: app.getVersion() || '1.0.1',
+    appVersion: app.getVersion() || '1.0.2',
     electronVersion: process.versions.electron,
     chromeVersion: process.versions.chrome,
     nodeVersion: process.versions.node,
@@ -1280,9 +1280,11 @@ ipcMain.handle('app:check-updates', async () => {
     const release = await fetchLatestGitHubRelease('Mailo037/bloub').catch(() => null)
     if (release && release.tag_name) {
       const isNewer = compareSemver(release.tag_name, currentVersion) > 0
-      const winAsset = release.assets?.find((a) =>
-        a.name.endsWith('.exe') || a.name.endsWith('.zip')
-      )
+      // Setup-Installer bevorzugen (.exe), sonst beliebige .exe, sonst .zip
+      const setupAsset = release.assets?.find((a) => a.name.includes('Setup') && a.name.endsWith('.exe'))
+      const exeAsset = setupAsset || release.assets?.find((a) => a.name.endsWith('.exe'))
+      const winAsset = exeAsset || release.assets?.find((a) => a.name.endsWith('.zip'))
+
       return {
         ok: true,
         mode: 'packaged',
@@ -1293,6 +1295,7 @@ ipcMain.handle('app:check-updates', async () => {
         releaseNotes: release.body || 'New features, improvements and bug fixes.',
         publishedAt: release.published_at,
         downloadUrl: winAsset ? winAsset.browser_download_url : release.html_url,
+        assetName: winAsset?.name || 'Bloub-Pet-Setup.exe',
         htmlUrl: release.html_url,
         checkedAt: Date.now()
       }
@@ -1311,6 +1314,64 @@ ipcMain.handle('app:check-updates', async () => {
   }
 })
 
+/** Datei direkt per HTTPS-Stream herunterladen (folgt Redirects automatisch). */
+function downloadFile(url, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    function get(targetUrl, redirects = 0) {
+      if (redirects > 5) return reject(new Error('Too many redirects'))
+      const parsed = new URL(targetUrl)
+      const isHttps = parsed.protocol === 'https:'
+      const client = isHttps ? https : require('node:http')
+      const options = {
+        hostname: parsed.hostname,
+        port: parsed.port || (isHttps ? 443 : 80),
+        path: parsed.pathname + parsed.search,
+        headers: {
+          'User-Agent': 'Bloub-Pet-App',
+          Accept: 'application/octet-stream'
+        },
+        timeout: 45000
+      }
+      const req = client.get(options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return get(res.headers.location, redirects + 1)
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed with HTTP ${res.statusCode}`))
+        }
+        const total = parseInt(res.headers['content-length'] || '0', 10)
+        let received = 0
+        const fileStream = fs.createWriteStream(destPath)
+        res.on('data', (chunk) => {
+          received += chunk.length
+          if (total > 0 && typeof onProgress === 'function') {
+            const percent = Math.min(95, Math.max(5, Math.round((received / total) * 100)))
+            onProgress(percent, received, total)
+          }
+        })
+        res.pipe(fileStream)
+        fileStream.on('finish', () => {
+          fileStream.close(() => resolve(destPath))
+        })
+        fileStream.on('error', (err) => {
+          fs.unlink(destPath, () => {})
+          reject(err)
+        })
+      })
+      req.on('error', (err) => {
+        fs.unlink(destPath, () => {})
+        reject(err)
+      })
+      req.on('timeout', () => {
+        req.destroy()
+        fs.unlink(destPath, () => {})
+        reject(new Error('Download timed out'))
+      })
+    }
+    get(url)
+  })
+}
+
 ipcMain.handle('app:install-update', async (_e, { downloadUrl } = {}) => {
   const { mode, gitRoot } = detectRunMode()
 
@@ -1327,21 +1388,47 @@ ipcMain.handle('app:install-update', async (_e, { downloadUrl } = {}) => {
     }
   }
 
-  // Gebautes Release: bestehender Installer-/Download-Flow.
+  // Gebautes Release: In-App Download und anschließender Installer-Start
   if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
-    if (downloadUrl.endsWith('.exe') || downloadUrl.endsWith('.zip')) {
-      broadcastUpdateProgress(20, 'Connecting to download server...')
-      await new Promise((r) => setTimeout(r, 400))
-      broadcastUpdateProgress(55, 'Downloading update package...')
+    try {
+      broadcastUpdateProgress(5, 'Connecting to download server...')
+      const filename = path.basename(new URL(downloadUrl).pathname) || 'Bloub-Pet-Setup.exe'
+      const destPath = path.join(app.getPath('temp'), filename)
+
+      try {
+        if (fs.existsSync(destPath)) fs.unlinkSync(destPath)
+      } catch {
+        /* ignore */
+      }
+
+      await downloadFile(downloadUrl, destPath, (percent, received, total) => {
+        const mbRec = (received / (1024 * 1024)).toFixed(1)
+        const mbTot = (total / (1024 * 1024)).toFixed(1)
+        broadcastUpdateProgress(percent, `Downloading update (${percent}% · ${mbRec}/${mbTot} MB)...`)
+      })
+
+      broadcastUpdateProgress(100, 'Download complete. Launching installer...')
       await new Promise((r) => setTimeout(r, 600))
-      broadcastUpdateProgress(85, 'Verifying package checksum...')
-      await new Promise((r) => setTimeout(r, 500))
-      broadcastUpdateProgress(100, 'Ready to install. Opening installer...')
-      shell.openExternal(downloadUrl)
-      return { ok: true, message: 'Installer launched' }
-    } else {
-      shell.openExternal(downloadUrl)
-      return { ok: true, openedBrowser: true }
+
+      if (destPath.endsWith('.exe')) {
+        const child = spawn(destPath, [], {
+          detached: true,
+          stdio: 'ignore'
+        })
+        child.unref()
+        setTimeout(() => {
+          app.quit()
+          process.exit(0)
+        }, 600)
+        return { ok: true, message: 'Installer launched', updating: true }
+      } else {
+        shell.showItemInFolder(destPath)
+        return { ok: true, message: 'Package downloaded' }
+      }
+    } catch (err) {
+      console.error('In-app update download error:', err)
+      broadcastUpdateProgress(0, 'Download failed')
+      return { ok: false, error: err?.message || String(err) }
     }
   }
 
@@ -1353,7 +1440,6 @@ ipcMain.handle('app:install-update', async (_e, { downloadUrl } = {}) => {
   broadcastUpdateProgress(100, 'Update applied successfully! Restarting...')
   await new Promise((r) => setTimeout(r, 600))
 
-  // Re-read config or notify user
   return { ok: true, updated: true }
 })
 

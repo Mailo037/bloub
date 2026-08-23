@@ -707,7 +707,7 @@ async function handleInstallUpdate() {
 bridge.onUpdateProgress?.((p) => {
   if (updateProgressWrap) updateProgressWrap.classList.remove('hidden')
   if (updateProgressFill) updateProgressFill.style.width = `${p.percent}%`
-  if (updateProgressText) updateProgressText.textContent = `${p.status} (${p.percent}%)`
+  if (updateProgressText) updateProgressText.textContent = p.status
 })
 
 checkUpdatesBtn?.addEventListener('click', () => void handleCheckUpdates())
