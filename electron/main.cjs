@@ -131,12 +131,41 @@ function broadcastConfig() {
   }
 }
 
-function clampToWorkArea(x, y) {
-  const { workArea } = screen.getPrimaryDisplay()
-  return [
-    Math.min(Math.max(x, workArea.x - 200), workArea.x + workArea.width - 420),
-    Math.min(Math.max(y, workArea.y - 200), workArea.y + workArea.height - 420)
-  ]
+/**
+ * Multi-Monitor Support:
+ * Erlaubt das freie Ziehen des Pet-Fensters über ALLE angeschlossenen Monitore.
+ * Verhindert gleichzeitig, dass das Pet im Nirgendwo (außerhalb aller Monitore)
+ * verloren geht (z.B. wenn ein Monitor ausgesteckt wird).
+ */
+function clampToDisplays(x, y, width = 620, height = 620) {
+  const displays = screen.getAllDisplays()
+  if (!displays || displays.length === 0) return [Math.round(x), Math.round(y)]
+
+  const cx = x + width / 2
+  const cy = y + height / 2
+  const MARGIN = 80
+
+  // 1. Liegt der Mittelpunkt auf irgendeinem aktiven Monitor?
+  for (const d of displays) {
+    const wa = d.workArea
+    if (
+      cx >= wa.x - MARGIN &&
+      cx <= wa.x + wa.width + MARGIN &&
+      cy >= wa.y - MARGIN &&
+      cy <= wa.y + wa.height + MARGIN
+    ) {
+      return [Math.round(x), Math.round(y)]
+    }
+  }
+
+  // 2. Falls außerhalb aller Monitore: Auf das nächstgelegene Display projizieren
+  const nearest = screen.getDisplayNearestPoint({ x: Math.round(cx), y: Math.round(cy) }) || screen.getPrimaryDisplay()
+  const wa = nearest.workArea
+
+  const clampedCx = Math.min(Math.max(cx, wa.x + MARGIN), wa.x + wa.width - MARGIN)
+  const clampedCy = Math.min(Math.max(cy, wa.y + MARGIN), wa.y + wa.height - MARGIN)
+
+  return [Math.round(clampedCx - width / 2), Math.round(clampedCy - height / 2)]
 }
 
 function rendererPreload() {
@@ -147,15 +176,14 @@ let winX = 0
 let winY = 0
 
 function createWindow() {
-  const [x, y] = clampToWorkArea(
-    Number.isFinite(config.x) ? config.x : workAreaRight(),
-    Number.isFinite(config.y) ? config.y : workAreaMiddleY()
-  )
+  const initialX = Number.isFinite(config.x) ? config.x : workAreaRight()
+  const initialY = Number.isFinite(config.y) ? config.y : workAreaMiddleY()
+  const [x, y] = clampToDisplays(initialX, initialY, 620, 620)
   winX = x
   winY = y
 
   console.log('[main] config:', JSON.stringify(config))
-  console.log('[main] primary display workArea:', JSON.stringify(screen.getPrimaryDisplay().workArea))
+  console.log('[main] displays count:', screen.getAllDisplays().length)
   console.log('[main] creating window at coords:', x, y)
 
   win = new BrowserWindow(
@@ -219,8 +247,11 @@ function showSettings() {
     return
   }
 
+  // Monitor ermitteln, auf dem sich das Pet-Fenster gerade befindet
+  const targetDisplay = screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) || screen.getPrimaryDisplay()
+  const { workArea } = targetDisplay
+
   // Neben dem Pad andocken; wenn rechts kein Platz ist, links davon.
-  const { workArea } = screen.getPrimaryDisplay()
   const ballR = Math.round((config.ballSize || 200) / 2)
   let x = winX + 310 + ballR + 16
   let y = winY + 310 - Math.round(SETTINGS_H / 2)
@@ -294,7 +325,8 @@ let drawWin = null
 
 function getDrawWin() {
   if (drawWin && !drawWin.isDestroyed()) return drawWin
-  const { workArea } = screen.getPrimaryDisplay()
+  const currentDisplay = screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) || screen.getPrimaryDisplay()
+  const { workArea } = currentDisplay
   drawWin = new BrowserWindow(
     overlayWindowOptions({
       x: workArea.x,
@@ -352,10 +384,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * sinnvolle Koordinaten waehlen kann.
  */
 async function drawPathOnScreen({ points, color }) {
-  const { workArea } = screen.getPrimaryDisplay()
+  const currentDisplay = screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) || screen.getPrimaryDisplay()
+  const { workArea } = currentDisplay
   try {
     if (!points || points.length < 2) return { ok: false, error: 'need at least 2 points' }
     const w = await drawReady()
+    w.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height })
     await drawClear(w)
     w.showInactive()
     w.moveTop()
@@ -394,7 +428,7 @@ async function drawPathOnScreen({ points, color }) {
         const t = i / steps
         const px = Math.round(current.x + dx * t)
         const py = Math.round(current.y + dy * t)
-        const [nx, ny] = clampToWorkArea(px - CX, py - CY)
+        const [nx, ny] = clampToDisplays(px - CX, py - CY, 620, 620)
         winX = nx
         winY = ny
         if (win && !win.isDestroyed()) {
@@ -426,21 +460,25 @@ async function drawPathOnScreen({ points, color }) {
   }
 }
 
-/** Screenshot des primären Displays als Base64-PNG (fuer desktop_screenshot). */
-async function takeScreenshot() {  try {
+/** Screenshot des aktiven Bildschirms (oder primären) als Base64-PNG (fuer desktop_screenshot). */
+async function takeScreenshot() {
+  try {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 1920, height: 1080 }
     })
-    // primären Bildschirm bevorzugen (meiste Pixel), sonst ersten nehmen
-    let primary = sources[0]
-    for (const s of sources) {
-      if (!primary || s.thumbnail.getSize().width > primary.thumbnail.getSize().width) primary = s
+    const currentDisplay = screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) || screen.getPrimaryDisplay()
+    let matched = sources.find((s) => s.display_id === String(currentDisplay.id))
+    if (!matched) {
+      matched = sources[0]
+      for (const s of sources) {
+        if (!matched || s.thumbnail.getSize().width > matched.thumbnail.getSize().width) matched = s
+      }
     }
-    if (!primary || primary.thumbnail.isEmpty()) {
+    if (!matched || matched.thumbnail.isEmpty()) {
       return { ok: false, error: 'no screen available' }
     }
-    const img = primary.thumbnail
+    const img = matched.thumbnail
     const size = img.getSize()
     const png = img.toPNG()
     return {
@@ -843,7 +881,7 @@ function workAreaMiddleY() {
 
 ipcMain.on('pet:moveBy', (_e, dx, dy) => {
   if (!win || win.isDestroyed()) return
-  const [x, y] = clampToWorkArea(Math.round(winX + dx), Math.round(winY + dy))
+  const [x, y] = clampToDisplays(winX + dx, winY + dy, 620, 620)
   winX = x
   winY = y
   win.setPosition(x, y)
@@ -852,6 +890,13 @@ ipcMain.on('pet:moveBy', (_e, dx, dy) => {
 })
 
 ipcMain.on('pet:dragEnd', () => {
+  if (win && !win.isDestroyed()) {
+    const [actualX, actualY] = win.getPosition()
+    winX = actualX
+    winY = actualY
+    config.x = actualX
+    config.y = actualY
+  }
   saveConfig()
 })
 
@@ -872,7 +917,10 @@ ipcMain.on('ui:close-settings', () => closeSettings())
 
 ipcMain.on('ui:resize-settings', (_e, x, y, w, h) => {
   if (!settingsWin || settingsWin.isDestroyed()) return
-  const { workArea } = screen.getPrimaryDisplay()
+  const currentDisplay = screen.getDisplayMatching(settingsWin.getBounds()) ||
+    screen.getDisplayNearestPoint({ x: Math.round(Number(x) || 0), y: Math.round(Number(y) || 0) }) ||
+    screen.getPrimaryDisplay()
+  const { workArea } = currentDisplay
   const minW = 300
   const minH = 360
   const maxW = Math.max(minW, workArea.width - 16)

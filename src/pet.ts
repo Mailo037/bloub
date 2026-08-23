@@ -575,24 +575,13 @@ function showPetMenu(clientX: number, clientY: number) {
   const menuWidth = 145
   const menuHeight = 120
 
-  // Bildschirmposition der Stage-Ecke: Fensterposition + Offset im Fenster.
-  const baseX = window.screenX + stageRect.left
-  const baseY = window.screenY + stageRect.top
-
   // Gewuenschte Stage-relative Position aus der Cursorposition
-  let left = clientX - stageRect.left
-  let top = clientY - stageRect.top
+  const rawLeft = clientX - stageRect.left
+  const rawTop = clientY - stageRect.top
 
-  // Menue nie ueber den sichtbaren Bildschirmbereich hinaus klemmen —
-  // auch wenn das Pet-Fenster selbst teilweise ausserhalb steht.
-  const availW = window.screen.availWidth
-  const availH = window.screen.availHeight
-  const minLeft = -baseX
-  const maxLeft = availW - menuWidth - baseX
-  const minTop = -baseY
-  const maxTop = availH - menuHeight - baseY
-  left = Math.min(Math.max(left, minLeft), Math.max(minLeft, maxLeft))
-  top = Math.min(Math.max(top, minTop), Math.max(minTop, maxTop))
+  // Menue immer sicher innerhalb des 620x620 Stage-Containers halten (funktioniert auf jedem Monitor)
+  const left = clamp(rawLeft, 8, Math.max(8, (stageRect.width || 620) - menuWidth - 8))
+  const top = clamp(rawTop, 8, Math.max(8, (stageRect.height || 620) - menuHeight - 8))
 
   petMenu.style.left = `${left}px`
   petMenu.style.top = `${top}px`
