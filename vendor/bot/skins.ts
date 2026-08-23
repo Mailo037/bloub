@@ -6,6 +6,7 @@ import {
   superellipseProfile,
   unionOfCirclesProfile
 } from './shape'
+import type { Point } from './shape'
 
 /**
  * Formes et couleurs proposees par le personnalisateur du bot.
@@ -33,6 +34,13 @@ export type ShapeId =
   | 'hexagone'
   | 'nuage'
   | 'goutte'
+  | 'etoile'
+  | 'coeur'
+  | 'pentagone'
+  | 'losange'
+  | 'croissant'
+  | 'ovale'
+  | 'octogone'
 
 export interface BotShape {
   id: ShapeId
@@ -73,6 +81,48 @@ const droplet = normalize(
   1.04
 )
 
+/** Etoile 5 branches : polygone en etoile concave, profileFromPolygon. */
+function starPolygon(points: number, outerR: number, innerR: number, rotDeg = 0): Point[] {
+  const rot = (rotDeg * Math.PI) / 180
+  return Array.from({ length: points * 2 }, (_, i) => {
+    const a = rot + (i / (points * 2)) * Math.PI * 2
+    const r = i % 2 === 0 ? outerR : innerR
+    return { x: Math.cos(a) * r, y: Math.sin(a) * r }
+  })
+}
+
+/** Coeur : deux lobes en haut, pointe en bas (y negiert: Screen-y zeigt nach unten). */
+function heartPolygon(count = 48): Point[] {
+  return Array.from({ length: count }, (_, i) => {
+    const t = (i / count) * Math.PI * 2
+    const s = Math.sin(t)
+    const x = 16 * s * s * s
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)
+    return { x: x / 16, y: -y / 16 }
+  })
+}
+
+const star = normalize(profileFromPolygon(starPolygon(5, 1.0, 0.45, -90), 0, 0), 1.0)
+const heart = normalize(profileFromPolygon(heartPolygon(), 0, 0), 1.02)
+const pentagon = normalize(regularPolygonProfile(5, 1.08, 0.3, -90), 1.0)
+/** Losange : Raute mit Ecken oben/unten/links/rechts (schlank, kein Wuerfel). */
+const diamond = normalize(
+  profileFromPolygon(
+    [
+      { x: 0, y: -1.02 },
+      { x: 0.62, y: 0 },
+      { x: 0, y: 1.02 },
+      { x: -0.62, y: 0 }
+    ],
+    0,
+    0
+  ),
+  1.0
+)
+const crescent = normalize(unionOfCirclesProfile([{ x: 0.15, y: 0, r: 1.0 }, { x: -0.45, y: 0, r: 0.95 }]), 1.02)
+const oval = normalize(superellipseProfile(2, 1, 1.25), 1.1)
+const octagon = normalize(regularPolygonProfile(8, 1.02, 0.22, -67.5), 1.0)
+
 /** Capsule couchee : enveloppe de deux disques cote a cote. */
 const capsule = profileFromPolygon(hullOfCircles(-0.42, 0, 0.62, 0.42, 0, 0.62), 0, 0)
 
@@ -88,7 +138,14 @@ export const SHAPES: BotShape[] = [
   // 0deg : sommets a gauche et a droite, donc aretes du haut et du bas plates
   { id: 'hexagone', radii: regularPolygonProfile(6, 1.04, 0.26, 0) },
   { id: 'nuage', radii: cloud },
-  { id: 'goutte', radii: droplet }
+  { id: 'goutte', radii: droplet },
+  { id: 'etoile', radii: star },
+  { id: 'coeur', radii: heart },
+  { id: 'pentagone', radii: pentagon },
+  { id: 'losange', radii: diamond },
+  { id: 'croissant', radii: crescent },
+  { id: 'ovale', radii: oval },
+  { id: 'octogone', radii: octagon }
 ]
 
 // Map indexee par `string` et non par `ShapeId` : les appelants interrogent avec
@@ -109,6 +166,16 @@ export type ColorId =
   | 'violet'
   | 'rose'
   | 'gris'
+  | 'aqua'
+  | 'menthe'
+  | 'lavande'
+  | 'saumon'
+  | 'or'
+  | 'argent'
+  | 'cerise'
+  | 'kaki'
+  | 'corail'
+  | 'prune'
 
 export interface BotColor {
   id: ColorId
@@ -128,7 +195,17 @@ export const COLORS: BotColor[] = [
   { id: 'violet', hex: '#8b5cf6' },
   { id: 'rose', hex: '#e152b0' },
   { id: 'gris', hex: '#a3a3a3' },
-  { id: 'creme', hex: '#f1efe9' }
+  { id: 'creme', hex: '#f1efe9' },
+  { id: 'aqua', hex: '#22d3ee' },
+  { id: 'menthe', hex: '#34d399' },
+  { id: 'lavande', hex: '#c084fc' },
+  { id: 'saumon', hex: '#fb923c' },
+  { id: 'or', hex: '#facc15' },
+  { id: 'argent', hex: '#d4d4d8' },
+  { id: 'cerise', hex: '#f43f5e' },
+  { id: 'kaki', hex: '#a3a635' },
+  { id: 'corail', hex: '#f97066' },
+  { id: 'prune', hex: '#7c3aed' }
 ]
 
 export const COLOR_BY_ID = new Map<string, BotColor>(COLORS.map((c) => [c.id, c]))

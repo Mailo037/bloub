@@ -65,7 +65,8 @@ function pingRequest(cfg) {
   return {
     url: `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`,
     headers: authHeaders(cfg),
-    body: { model: cfg.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }
+    // max_tokens 16: manche Endpoints (z.B. llama.cpp) lehnen Werte <= 2 ab
+    body: { model: cfg.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 16, stream: false }
   }
 }
 

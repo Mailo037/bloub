@@ -4,6 +4,7 @@ import {
   DOT_PEAK,
   DOT_R,
   DOT_X,
+  GLYPH_Z,
   NOTIF_ANGLE,
   NOTIF_DIST,
   NOTIF_MARGIN,
@@ -162,6 +163,26 @@ export type StateId =
   | 'orbit'
   | 'burst'
   | 'comet'
+  /** chat: der Bloub verschlingt einen Drop (Vortex), ~1 s */
+  | 'absorb'
+  /** chat: loopender Sprech-Zustand mit pulsierendem Mund */
+  | 'talk'
+  /** Augen-Fokus: neugieriger Blick, der seitlich hin- und herschweift */
+  | 'lookaround'
+  /** Augen-Fokus: aufgedreht — grosse Augen, schnelles Hin- und Herspringen */
+  | 'excited'
+  /** Augen-Fokus: konzentriertes Starren mit zusammengekniffenen Augen */
+  | 'focus'
+  /** Augen-Fokus: misstrauischer Seitblick mit schmalerem Auge */
+  | 'sideeye'
+  /** Augen-Fokus: starrer, unblinzelnder Blick direkt nach vorn */
+  | 'stare'
+  /** Augen-Fokus: schnelles vertikales Abtasten (Lesen/Suchen) */
+  | 'scan'
+  /** Augen-Fokus: Schwindel — Augen kreisen, Koerper schwankt */
+  | 'dizzy'
+  /** Koerper+Augen: schuechternes Lurken — duckt sich und lugt nach oben */
+  | 'peek'
   /** transition d'interface, pas une animation du catalogue : hors `SEQUENCE` */
   | 'swirl'
 
@@ -204,6 +225,14 @@ function dotPulse(t: number, index: number): number {
   const p = ((((t - offset) % period) + period) % period)
   if (p >= duration) return 0
   return 0.5 - 0.5 * Math.cos((p / duration) * TAU)
+}
+
+function glyphZ(s: number): string {
+  const w = s * 0.88
+  const h = s * 1.05
+  const t = s * 0.32
+  const mid = s * 0.28
+  return `M ${-w} ${-h} L ${w} ${-h} L ${w} ${-h + t} L ${-w + mid} ${h - t} L ${w} ${h - t} L ${w} ${h} L ${-w} ${h} L ${-w} ${h - t} L ${w - mid} ${-h + t} L ${-w} ${-h + t} Z`
 }
 
 export const STATES: StateDef[] = [
@@ -315,6 +344,226 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * Augen-Fokus: Neugieriges Umschauen. Der Koerper bleibt fast still, nur
+     * der Blick schweift in weichen Bogen nach links, rechts, wieder links —
+     * mit kurzer Mitte-Pause wie beim Abtasten der Umgebung.
+     */
+    id: 'lookaround',
+    duration: 3.2,
+    morph: 0.4,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      // Zweieinhalb Schwuene: sin gibt weiche Wenden an den Blickwechseln
+      const sweep = Math.sin(t * (TAU / 1.3)) * 30 - 6
+      // Kopf folgt dem Blick leicht versetzt und gerafft
+      const roll = sweep * 0.22
+      const pitch = -5 + Math.sin(t * (TAU / 2.6)) * 5
+      // Augen sind etwas grosser als Ruhe (aufmerksam), aber nicht weit
+      const eyes = pair(EYE_W * 1.12, EYE_H * 0.98)
+      return base({
+        gaze: { yaw: sweep, pitch, roll },
+        split: 16.8,
+        eyes,
+        offX: sweep * 0.0022
+      })
+    }
+  },
+
+  {
+    /**
+     * Augen-Fokus: Aufgedreht/aufgeregt. Grosse runde Augen, der Blick springt
+     * schnell zwischen Punkten hin und her, der Koerper huepft klein mit
+     * Squash/Stretch — die Aufregung sitzt komplett im Auge.
+     */
+    id: 'excited',
+    duration: 2.6,
+    minDuration: 2.2,
+    morph: 0.35,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      // Schnelles Hin-und-her-Rattern des Blicks (+ kleines Zittern)
+      const dart = Math.sin(t * 9.4) * 26 + Math.sin(t * 21) * 4
+      const pitch = -12 + Math.sin(t * 7.7) * 7
+      // Kleiner Huepfer: |sin| gibt Stoss- statt Schweb-Bewegung
+      const hop = Math.abs(Math.sin(t * TAU / 0.65))
+      const squash = 1 + hop * 0.07
+      // Funken: drei kleine Punkte tanzen um den Kopf
+      const dots = [0, 1, 2].map((i) => {
+        const a = t * TAU * 0.9 + (i / 3) * TAU
+        return {
+          x: Math.cos(a) * 1.18,
+          y: -0.55 + Math.sin(a) * 0.28,
+          r: 0.05 + 0.02 * Math.sin(t * TAU * 1.6 + i),
+          opacity: 0.55 + 0.35 * Math.sin(t * TAU * 1.3 + i * 2)
+        }
+      })
+      return base({
+        sil: { ...circle(1), sx: 1 / Math.sqrt(squash), sy: squash, cy: -hop * 0.05 },
+        gaze: { yaw: dart, pitch, roll: dart * 0.08 },
+        split: 18.6,
+        eyes: pair(0.33, 0.66),
+        dots
+      })
+    }
+  },
+
+  {
+    /**
+     * Augen-Fokus: Konzentration. Zusammengekniffene Augen, Blick fest nach
+     * vorn mit feinem Mikro-Zittern, Koerper leichtet leicht vor (Zoom-In).
+     */
+    id: 'focus',
+    duration: 2.4,
+    morph: 0.45,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const lean = easings.easeInOutCubic(clamp(t / 0.9))
+      const tremble = Math.sin(t * 13) * 1.6
+      const squintEyes: [EyeCfg, EyeCfg] = [
+        { w: EYE_W * 0.62, h: EYE_H * 0.42, open: 1 },
+        { w: EYE_W * 0.62, h: EYE_H * 0.42, open: 1 }
+      ]
+      return base({
+        sil: circle(1 + lean * 0.04, { cy: lean * 0.03 }),
+        gaze: { yaw: tremble, pitch: 3, roll: 0 },
+        split: 14.2,
+        eyes: squintEyes
+      })
+    }
+  },
+
+  {
+    /**
+     * Augen-Fokus: Misstrauischer Seitblick. Beide Augen wandern langsam weit
+     * zur Seite und schmaelern dabei — klassisches "hmm, wirklich?".
+     */
+    id: 'sideeye',
+    duration: 2.4,
+    morph: 0.45,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      // Langsames Hinueberschielen, halten, zurueck
+      const swing = Math.sin(clamp(t / 2.0) * Math.PI)
+      const yaw = easings.easeInOutCubic(swing) * 34 - 4
+      const narrow = 1 - swing * 0.3
+      return base({
+        gaze: { yaw, pitch: 6, roll: yaw * 0.12 },
+        split: 15.5,
+        eyes: pair(EYE_W * 0.8 * narrow + 0.02, EYE_H * 0.62),
+        offX: yaw * 0.0015
+      })
+    }
+  },
+
+  {
+    /**
+     * Augen-Fokus: Der Starre-Blick. Augen gross und unblinzelnd, Blick fest
+     * nach vorn auf den Nutzer (leicht von unten), Koerper absolut still.
+     */
+    id: 'stare',
+    duration: 2.8,
+    minDuration: 2,
+    morph: 0.5,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: false,
+    pose: () =>
+      base({
+        gaze: { yaw: 0, pitch: 14, roll: 0 },
+        split: 17.5,
+        eyes: pair(0.3, 0.72)
+      })
+  },
+
+  {
+    /**
+     * Augen-Fokus: Schnelles Abtasten. Der Blick springt in kurzen Schritten
+     * hoch und runter, wie beim Lesen oder Absuchen einer Liste.
+     */
+    id: 'scan',
+    duration: 2.4,
+    morph: 0.35,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      // Treppige Spruenge statt Welle: sign(sin) gibt klare Haltepunkte
+      const step = Math.sign(Math.sin(t * TAU / 0.36))
+      const pitch = step * 16
+      const yaw = Math.sin(t * TAU / 0.9) * 10
+      return base({
+        gaze: { yaw, pitch, roll: 0 },
+        split: 16,
+        eyes: pair(EYE_W * 0.95, EYE_H * 0.88)
+      })
+    }
+  },
+
+  {
+    /**
+     * Augen-Fokus: Schwindel. Die Augen kreisen runde fuer Runde im Kopf,
+     * der Koerper schwankt traege gegengleich — "wieviel habe ich getrunken?".
+     */
+    id: 'dizzy',
+    duration: 3,
+    minDuration: 2.4,
+    morph: 0.4,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const a = t * TAU * 0.55
+      const sway = Math.sin(t * TAU * 0.28) * 0.06
+      const wobble = 1 + Math.sin(t * TAU * 0.85) * 0.03
+      return base({
+        sil: { ...circle(wobble), rot: sway * 40, cx: sway },
+        // Yaw/Pitch beschreiben zusammen einen Kreis auf der Kugel
+        gaze: { yaw: Math.cos(a) * 38, pitch: Math.sin(a) * 26, roll: sway * 60 },
+        split: 15,
+        eyes: pair(EYE_W * 0.85, EYE_H * 0.7)
+      })
+    }
+  },
+
+  {
+    /**
+     * Koerper+Augen: Schuechternes Lurken. Der Bloub duckt sich halb weg
+     * (Squash nach unten) und lugt vorsichtig mit grossen Augen nach oben —
+     * erst von einer Seite, dann schuechtern zur Mitte.
+     */
+    id: 'peek',
+    duration: 2.6,
+    minDuration: 2,
+    morph: 0.45,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const duck = easings.easeInOutCubic(clamp(t / 0.6)) * easings.easeInOutCubic(clamp((2.5 - t) / 0.5))
+      const side = Math.sin(t * TAU / 1.7) * 18
+      const shyEyes: [EyeCfg, EyeCfg] = [
+        { w: 0.24, h: 0.52, open: 1 },
+        { w: 0.24, h: 0.52, open: 1 }
+      ]
+      return base({
+        sil: { ...circle(1), sy: 1 - duck * 0.22, cy: duck * 0.2 },
+        gaze: { yaw: side, pitch: -20 - duck * 6, roll: side * 0.25 },
+        split: 17,
+        eyes: shyEyes
+      })
+    }
+  },
+
+  {
     id: 'notify',
     duration: 2.2,
     morph: 0.5,
@@ -359,17 +608,85 @@ export const STATES: StateDef[] = [
 
   {
     id: 'sleep',
-    duration: 2.4,
-    morph: 0.5,
+    duration: 600,
+    morph: 0.6,
     baseFace: false,
-    baseBody: false,
+    baseBody: true,
     blinkIn: false,
-    pose: (t) =>
-      base({
-        // Rebond vertical mesure : +-0.19 autour de +0.11, periode 0.6 s.
-        sil: circle(0.1585, { cy: 0.11 + Math.sin(t * (TAU / 0.6)) * 0.19 }),
-        eyeAlpha: 0
+    pose: (t) => {
+      // Sanftes, tiefes Schlafatmen (Atmung und leichtes Neigen des Kopfes)
+      const breathCycle = (t * TAU) / 3.2
+      const breath = Math.sin(breathCycle)
+      const breathSquash = 1 + breath * 0.045
+      const headTilt = -4 + breath * 2
+
+      // Geschlossene schlafende Augen (friedlich zugezogene Schlitze)
+      const sleepEyes: [EyeCfg, EyeCfg] = [
+        { w: 0.28, h: 0.07, open: 1, tilt: -6 },
+        { w: 0.28, h: 0.07, open: 1, tilt: 6 }
+      ]
+
+      // 3 kontinuierlich aufsteigende "Z"-Partikel nach rechts oben mit sanfter Rotation und Ein-/Ausblenden
+      const numZs = 3
+      const cycleDuration = 3.2
+      const dots: DotRender[] = []
+
+      for (let i = 0; i < numZs; i++) {
+        const offset = i * (cycleDuration / numZs)
+        const progress = ((((t + offset) % cycleDuration) + cycleDuration) % cycleDuration) / cycleDuration
+
+        // Startpunkt rechts oben an der Schläfe/Wange
+        const startX = 0.38 + i * 0.04
+        const startY = -0.15 - i * 0.03
+
+        // Bogen nach rechts oben
+        const x = startX + progress * 0.72 + Math.sin(progress * Math.PI * 1.5 + i * 1.8) * 0.08
+        const y = startY - progress * 1.12 - Math.pow(progress, 1.3) * 0.25
+
+        // Größe wächst sanft mit dem Aufsteigen
+        const r = 0.065 + progress * 0.075
+
+        // Leichte zufällige/organische Rotation
+        const baseRot = -10 + i * 16
+        const rot = baseRot + Math.sin(progress * TAU + i * 2.2) * 22
+
+        // Ein- und Ausblenden (weiches Fade-in am Anfang, Fade-out am Ende)
+        let opacity = 0
+        if (progress < 0.2) {
+          opacity = easings.easeOutCubic(progress / 0.2)
+        } else if (progress > 0.65) {
+          opacity = 1 - easings.easeInOutCubic((progress - 0.65) / 0.35)
+        } else {
+          opacity = 1
+        }
+        opacity *= 0.85
+
+        if (opacity > 0.01) {
+          dots.push({
+            x,
+            y,
+            r,
+            d: glyphZ(r),
+            rot,
+            opacity
+          })
+        }
+      }
+
+      return base({
+        sil: {
+          ...circle(1),
+          sx: 1 / Math.sqrt(breathSquash),
+          sy: breathSquash,
+          cy: breath * 0.025
+        },
+        gaze: { yaw: 8, pitch: -12, roll: headTilt },
+        split: 16.5,
+        eyes: sleepEyes,
+        eyeAlpha: 0.9,
+        dots
       })
+    }
   },
 
   {
@@ -538,6 +855,83 @@ export const STATES: StateDef[] = [
   },
 
   {
+    /**
+     * Chat: der Bloub verschlingt einen Drop. Einmaliger Smart-Loop:
+     * Phase 1 (0-1s) expandiert der Punktring von innen nach aussen
+     * (Wirbel baut sich auf), Phase 2 ziehen sich die Punkte wieder ins
+     * Zentrum zurueck und ROTIEREN dort stabil weiter — der State muss nie
+     * neu gestartet werden, er bleibt als sichtbarer Vortex stehen, waehrend
+     * der Koerper ausgeblendet ist (nur der Vortex ist sichtbar).
+     */
+    id: 'absorb',
+    duration: 1.2,
+    minDuration: 1.1,
+    morph: 0.3,
+    baseFace: true,
+    baseBody: true,
+    blinkIn: false,
+    pose: (t) => {
+      const N = 10
+      // Phase 1: Wirbel baut sich von innen nach aussen auf (0..1s)
+      const build = clamp(t / 1.0)
+      const ring = 0.3 + build * 1.35 // 0.3 -> 1.65
+      const swirl = t * TAU * 0.7
+      // Phase 2: zurueck ins Zentrum + stabile Rotation (ab ~1s)
+      const spin = Math.max(0, t - 1.0)
+      const spinR = 0.32 + 0.07 * Math.sin(spin * 2.1) // leicht pulsierender Radius
+      const spinA = spin * TAU * 1.5
+      const swallowed = build >= 1
+      const dots = Array.from({ length: N }, (_, i) => {
+        const a = (i / N) * TAU + (build < 1 ? swirl : spinA) + i * 0.13
+        const r = build < 1 ? ring : spinR
+        const pulse = Math.sin(spin * 3.2 + i * 0.9)
+        return {
+          x: Math.cos(a) * r,
+          y: Math.sin(a) * r * 0.92,
+          r: build < 1 ? 0.05 + build * 0.03 : 0.055 + 0.018 * pulse,
+          opacity: build < 1 ? 0.6 + build * 0.3 : 0.85 + 0.12 * pulse
+        }
+      })
+      // Waehrend des Aufbaus wippt der Koerper mit, danach wird er ausgeblendet
+      const gulp = Math.sin(clamp(t / 1.0) * Math.PI) ** 2
+      return base({
+        sil: circle(1 + gulp * 0.06),
+        bodyAlpha: swallowed ? 0 : 1,
+        eyeAlpha: swallowed ? 0 : 1,
+        dots
+      })
+    }
+  },
+
+  {
+    /**
+     * Chat: Sprechen. Loopender Zustand (grosse duration wie `idle`): die
+     * Augen sind leicht verengt, ein kleiner Mund unten pulst mit ~0.22 s
+     * Periode. Die Amplitude steuert spaeter der Anrufer ueber die Zeit.
+     */
+    id: 'talk',
+    duration: 600,
+    morph: 0.35,
+    baseFace: true,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const mouth = 0.5 - 0.5 * Math.cos((t * TAU) / 0.22)
+      return base({
+        eyes: pair(EYE_W * 0.82, EYE_H * 0.82),
+        dots: [
+          {
+            x: 0,
+            y: 0.34,
+            r: 0.035 + mouth * 0.05,
+            opacity: 0.95
+          }
+        ]
+      })
+    }
+  },
+
+  {
     id: 'comet',
     duration: 2.4,
     minDuration: 2.4,
@@ -583,7 +977,17 @@ export const POSES: Record<StateId, number> = {
   orbit: 1.2,
   swirl: 0.5,
   burst: 0.45,
-  comet: 1.15
+  comet: 1.15,
+  absorb: 0.55,
+  talk: 0.3,
+  lookaround: 1.4,
+  excited: 0.9,
+  focus: 1.2,
+  sideeye: 1.3,
+  stare: 1.6,
+  scan: 1.2,
+  dizzy: 1.8,
+  peek: 1.4
 }
 
 export const SEQUENCE: StateId[] = [
@@ -600,5 +1004,13 @@ export const SEQUENCE: StateId[] = [
   'play',
   'orbit',
   'burst',
-  'comet'
+  'comet',
+  'lookaround',
+  'excited',
+  'focus',
+  'sideeye',
+  'stare',
+  'scan',
+  'dizzy',
+  'peek'
 ]

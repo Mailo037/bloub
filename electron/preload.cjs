@@ -16,5 +16,37 @@ contextBridge.exposeInMainWorld('bloubPet', {
   onSettingsVisible: (cb) => ipcRenderer.on('settings:visibility', (_e, visible) => cb(visible)),
   onQuitRequested: (cb) => ipcRenderer.on('pet:quit-requested', () => cb()),
   confirmQuit: () => ipcRenderer.send('pet:quit-confirm'),
-  quit: () => ipcRenderer.send('pet:quit')
+  quit: () => ipcRenderer.send('pet:quit'),
+  // pet: chat summon + drop target
+  toggleChat: () => ipcRenderer.send('pet:request-chat-toggle'),
+  attachPaths: (paths) => ipcRenderer.invoke('chat:attach', paths),
+  onPlayState: (cb) => ipcRenderer.on('pet:play-state', (_e, id, duration) => cb(id, duration)),
+  onChatVisibility: (cb) => ipcRenderer.on('ui:chat-visibility', (_e, visible) => cb(visible)),
+  onCustomAnim: (cb) => ipcRenderer.on('pet:custom-anim', (_e, spec) => cb(spec)),
+  notifyCustomAnimDone: (id) => ipcRenderer.send('pet:custom-anim-done', id),
+  pathForFile: (file) => {
+    const { webUtils } = require('electron')
+    return webUtils.getPathForFile(file)
+  },
+  // chat window
+  sendChat: (payload) => ipcRenderer.invoke('chat:send', payload),
+  showChat: () => ipcRenderer.send('ui:show-chat'),
+  abortChat: () => ipcRenderer.send('chat:abort'),
+  hideChat: () => ipcRenderer.send('ui:hide-chat'),
+  onChatEvent: (cb) => ipcRenderer.on('chat:event', (_e, ev) => cb(ev)),
+  testProvider: () => ipcRenderer.invoke('chat:test-provider'),
+  clearMemory: () => ipcRenderer.invoke('chat:clear-memory'),
+  getApiKeyStatus: () => ipcRenderer.invoke('chat:get-api-key-status'),
+  setApiKey: (key) => ipcRenderer.invoke('chat:set-api-key', key),
+  setHotkey: (combo) => ipcRenderer.invoke('hotkey:set', combo),
+  testHotkey: (combo) => ipcRenderer.invoke('hotkey:test', combo),
+  setGrantSecrets: (path, allowSecrets) => ipcRenderer.invoke('grants:set-secrets', path, allowSecrets),
+  removeGrant: (path) => ipcRenderer.invoke('grants:remove', path),
+  // about & updates
+  getAppSpecs: () => ipcRenderer.invoke('app:get-specs'),
+  checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),
+  installUpdate: (target) => ipcRenderer.invoke('app:install-update', target),
+  openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
+  onUpdateProgress: (cb) => ipcRenderer.on('app:update-progress', (_e, progress) => cb(progress))
 })
+

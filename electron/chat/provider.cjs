@@ -4,9 +4,9 @@
 const path = require('node:path')
 
 const ADAPTERS = {
-  'openai-completions': () => require('./protocols/openai-completions'),
-  'openai-responses': () => require('./protocols/openai-responses'),
-  'anthropic-messages': () => require('./protocols/anthropic-messages')
+  'openai-completions': () => require('./protocols/openai-completions.cjs'),
+  'openai-responses': () => require('./protocols/openai-responses.cjs'),
+  'anthropic-messages': () => require('./protocols/anthropic-messages.cjs')
 }
 
 function getAdapter(protocol) {
@@ -66,11 +66,34 @@ async function readError(res) {
   return detail ? `${res.status} ${res.statusText}: ${detail.slice(0, 500)}` : `${res.status} ${res.statusText}`
 }
 
+/** Hilfsfunktion fuer abbrechbare Verzoegerung bei Retries. */
+function sleepWithSignal(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('aborted'))
+    const timer = setTimeout(() => {
+      cleanup()
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      cleanup()
+      reject(new Error('aborted'))
+    }
+    const cleanup = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+    }
+    signal?.addEventListener('abort', onAbort)
+  })
+}
+
+const MAX_RETRIES = 5
+
 /**
  * Führt einen Streaming-Chat-Turn aus und ruft `onEvent` mit normalisierten
  * Events auf: { type:'token', text } | { type:'tool_call', id, name, argsJson }
- * | { type:'done', usage? }. Wirft nie für Provider-Fehler — stattdessen kommt
- * { type:'error', message } als letztes Event.
+ * | { type:'done', usage? }.
+ *
+ * Wiederholt bei Fehlern bis zu 5 Mal mit exponentiellem Backoff (1s, 2s, 4s, 8s, 16s).
  */
 async function streamChat(cfg, normalizedRequest, signal, onEvent) {
   const adapter = getAdapter(cfg.protocol)
@@ -85,30 +108,93 @@ async function streamChat(cfg, normalizedRequest, signal, onEvent) {
     onEvent({ type: 'error', message: err?.message || String(err) })
     return
   }
-  let res
-  try {
-    res = await fetch(req.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...req.headers },
-      body: JSON.stringify(req.body),
-      signal
-    })
-  } catch (err) {
-    onEvent({ type: 'error', message: err?.name === 'AbortError' ? 'aborted' : `request failed: ${err?.message || err}` })
-    return
-  }
-  if (!res.ok || !res.body) {
-    onEvent({ type: 'error', message: await readError(res) })
-    return
-  }
-  try {
-    for await (const ev of adapter.parseStream(sseData(res.body))) {
-      onEvent(ev)
-      if (ev.type === 'done' || ev.type === 'error') break
+
+  let attempt = 0
+  let lastError = ''
+
+  while (attempt <= MAX_RETRIES) {
+    if (signal?.aborted) return
+
+    let res
+    try {
+      res = await fetch(req.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...req.headers },
+        body: JSON.stringify(req.body),
+        signal
+      })
+    } catch (err) {
+      if (err?.name === 'AbortError' || signal?.aborted) return
+      lastError = err?.message || String(err)
+      attempt++
+      if (attempt <= MAX_RETRIES) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 16000) + Math.floor(Math.random() * 300)
+        onEvent({
+          type: 'status',
+          text: `Connection failed (${lastError}). Retrying (${attempt}/${MAX_RETRIES}) in ${(delay / 1000).toFixed(1)}s …`
+        })
+        try {
+          await sleepWithSignal(delay, signal)
+        } catch {
+          return
+        }
+        continue
+      }
+      onEvent({ type: 'error', message: `Request failed after ${MAX_RETRIES} retries: ${lastError}` })
+      return
     }
-  } catch (err) {
-    if (err?.name !== 'AbortError') {
-      onEvent({ type: 'error', message: `stream failed: ${err?.message || err}` })
+
+    if (!res.ok || !res.body) {
+      lastError = await readError(res)
+      attempt++
+      if (attempt <= MAX_RETRIES) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 16000) + Math.floor(Math.random() * 300)
+        onEvent({
+          type: 'status',
+          text: `Provider error (${lastError}). Retrying (${attempt}/${MAX_RETRIES}) in ${(delay / 1000).toFixed(1)}s …`
+        })
+        try {
+          await sleepWithSignal(delay, signal)
+        } catch {
+          return
+        }
+        continue
+      }
+      onEvent({ type: 'error', message: lastError })
+      return
+    }
+
+    let receivedTokens = false
+    try {
+      for await (const ev of adapter.parseStream(sseData(res.body))) {
+        if (ev.type === 'token' || ev.type === 'tool_call') {
+          receivedTokens = true
+        }
+        onEvent(ev)
+        if (ev.type === 'done' || ev.type === 'error') break
+      }
+      return
+    } catch (err) {
+      if (err?.name === 'AbortError' || signal?.aborted) return
+      lastError = `stream failed: ${err?.message || err}`
+      if (!receivedTokens) {
+        attempt++
+        if (attempt <= MAX_RETRIES) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 16000) + Math.floor(Math.random() * 300)
+          onEvent({
+            type: 'status',
+            text: `Stream interrupted. Retrying (${attempt}/${MAX_RETRIES}) in ${(delay / 1000).toFixed(1)}s …`
+          })
+          try {
+            await sleepWithSignal(delay, signal)
+          } catch {
+            return
+          }
+          continue
+        }
+      }
+      onEvent({ type: 'error', message: lastError })
+      return
     }
   }
 }

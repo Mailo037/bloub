@@ -12,35 +12,183 @@
   -->
   <div id="card">
     <header id="head">
-      <span class="led"></span>
-      <h1>bloub pad settings</h1>
-      <button id="close" class="no-drag" title="Close" aria-label="Close settings">×</button>
+      <div id="head-row">
+        <span class="led"></span>
+        <h1>Pad</h1>
+        <button id="close" class="no-drag" title="Close" aria-label="Close settings">×</button>
+      </div>
+      <nav id="tabs" class="no-drag" aria-label="Settings sections">
+        <button type="button" data-tab="look" class="on">Look</button>
+        <button type="button" data-tab="chat">Chat</button>
+        <button type="button" data-tab="pad">Pad</button>
+        <button type="button" data-tab="about">About</button>
+      </nav>
     </header>
 
     <main id="scroll">
-      <section>
-        <h2>Expression</h2>
-        <div class="pills" id="expr-pills"></div>
-      </section>
-      <section>
-        <h2>Shape</h2>
-        <div class="pills" id="shape-pills"></div>
-      </section>
-      <section>
-        <h2>Color</h2>
-        <div id="color-row"></div>
-      </section>
-      <section>
-        <h2>Size</h2>
-        <input type="range" id="size-range" min="150" max="280" step="10" />
-      </section>
-      <section class="row-between">
-        <label class="toggle">
-          <input type="checkbox" id="events-toggle" />
-          Random events
-        </label>
-        <button id="quit-btn">Quit pad</button>
-      </section>
+      <div id="pane-look" class="pane">
+        <section class="well">
+          <h2>Expression</h2>
+          <div class="pills" id="expr-pills"></div>
+        </section>
+        <section class="well">
+          <h2>Shape</h2>
+          <div class="pills" id="shape-pills"></div>
+        </section>
+        <section class="well">
+          <h2>Color</h2>
+          <div id="color-row"></div>
+        </section>
+        <section class="well">
+          <div class="row-between tight">
+            <h2>Size</h2>
+            <span id="size-val">200</span>
+          </div>
+          <input type="range" id="size-range" min="150" max="280" step="10" />
+        </section>
+      </div>
+
+      <div id="pane-chat" class="pane hidden">
+        <section class="well">
+          <h2>Endpoint</h2>
+          <label class="fld">Base url <input type="text" id="chat-baseurl" spellcheck="false" placeholder="https://api.openai.com/v1" /></label>
+          <label class="fld">Wire protocol
+            <div id="chat-protocol"></div>
+          </label>
+          <label class="fld">Model <input type="text" id="chat-model" spellcheck="false" placeholder="gpt-4o-mini" /></label>
+          <label class="fld">Api key <input type="password" id="chat-apikey" placeholder="(not set)" /></label>
+          <div class="row-between">
+            <span id="chat-test-result"></span>
+            <button type="button" id="chat-test-btn">Test connection</button>
+          </div>
+        </section>
+        <section class="well">
+          <h2>Summon</h2>
+          <label class="fld">Hotkey <input type="text" id="chat-hotkey" spellcheck="false" /></label>
+          <div class="row-between">
+            <span id="hotkey-status"></span>
+            <button type="button" id="hotkey-test-btn">Test</button>
+          </div>
+        </section>
+        <section class="well">
+          <h2>Behavior</h2>
+          <div id="chat-tools-toggle-slot" class="toggle-slot"></div>
+          <div id="chat-voice-toggle-slot" class="toggle-slot"></div>
+          <label class="fld">Verbosity
+            <div id="chat-verbosity-slot"></div>
+          </label>
+          <p class="hint">How detailed the bloub's answers should be.</p>
+          <p class="hint">Drop a folder on the bloub to grant workspace access.</p>
+          <div id="grant-list"></div>
+          <button type="button" id="clear-memory-btn">Archive chat memory</button>
+        </section>
+      </div>
+
+      <div id="pane-pad" class="pane hidden">
+        <section class="well">
+          <h2>Life</h2>
+          <div id="events-toggle-slot" class="toggle-slot"></div>
+          <p class="hint">Idle animations while nobody is poking it.</p>
+        </section>
+        <section class="well">
+          <h2>File access</h2>
+          <div id="file-access-slot" class="toggle-slot"></div>
+          <p class="hint">Global filesystem capability for granted folders. Read = list/read/search; read &amp; write additionally allows creating and editing files. "None" disables all filesystem tools.</p>
+        </section>
+        <section class="well">
+          <h2>Terminal</h2>
+          <div id="terminal-toggle-slot" class="toggle-slot"></div>
+          <p class="hint">Allow the bloub to run terminal commands on your machine. Powerful — only enable if you trust it. Commands run with a 30s timeout and output is capped.</p>
+        </section>
+        <section class="well">
+          <h2>Memory</h2>
+          <div id="memory-toggle-slot" class="toggle-slot"></div>
+          <p class="hint">Let the bloub remember stable facts about you (name, preferences, projects) across chat sessions via memory_write/memory_get. Stored locally in your user data folder.</p>
+        </section>
+        <section class="well">
+          <h2>Full drive access</h2>
+          <div id="drive-toggle-slot" class="toggle-slot"></div>
+          <p class="hint">Grant the bloub full read (and write if enabled) access to your system drive (C:\). This adds a permanent grant for the root drive so the AI can inspect files anywhere without needing to drop a folder first.</p>
+        </section>
+        <section class="well danger-well">
+          <h2>Leave</h2>
+          <button type="button" id="quit-btn">Quit pad</button>
+        </section>
+      </div>
+
+      <div id="pane-about" class="pane hidden">
+        <section class="well about-hero-well">
+          <div class="about-hero">
+            <div id="about-avatar-preview"></div>
+            <div class="about-hero-text">
+              <div class="about-title-row">
+                <h2 id="about-app-name">Bloub Pad</h2>
+                <span class="version-tag" id="about-app-version">v1.0.0</span>
+              </div>
+              <p class="about-desc">Codex-Pad desktop pet running the Bloub avatar engine.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="well">
+          <h2>Software Updates</h2>
+          <div class="update-box">
+            <div class="update-mode-line" id="update-mode-line">—</div>
+            <div class="update-header">
+              <div class="update-status-wrap">
+                <span class="update-indicator" id="update-indicator"></span>
+                <span id="update-status-text">Click to check for updates</span>
+              </div>
+              <button type="button" id="check-updates-btn" class="k-action-btn">
+                <span>Check updates</span>
+              </button>
+            </div>
+            
+            <div id="update-details-card" class="update-card hidden">
+              <div class="update-card-title-row">
+                <strong id="update-card-title"></strong>
+                <span id="update-card-date" class="update-date"></span>
+              </div>
+              <div id="update-card-notes" class="update-notes"></div>
+              <div class="update-card-actions">
+                <button type="button" id="install-update-btn" class="k-action-btn primary">Install update</button>
+                <button type="button" id="view-release-btn" class="k-action-btn secondary">Release notes</button>
+              </div>
+            </div>
+
+            <div id="update-progress-wrap" class="update-progress-wrap hidden">
+              <div class="update-progress-bar">
+                <div id="update-progress-fill" class="update-progress-fill" style="width: 0%"></div>
+              </div>
+              <span id="update-progress-text" class="update-progress-text"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="well">
+          <h2>System & Specifications</h2>
+          <div class="specs-grid" id="specs-grid">
+            <div class="spec-row"><span class="spec-key">Run Mode</span><span class="spec-val" id="spec-run-mode">—</span></div>
+            <div class="spec-row"><span class="spec-key">Operating System</span><span class="spec-val" id="spec-os">—</span></div>
+            <div class="spec-row"><span class="spec-key">Architecture</span><span class="spec-val" id="spec-arch">—</span></div>
+            <div class="spec-row"><span class="spec-key">Electron</span><span class="spec-val" id="spec-electron">—</span></div>
+            <div class="spec-row"><span class="spec-key">Chromium</span><span class="spec-val" id="spec-chrome">—</span></div>
+            <div class="spec-row"><span class="spec-key">Node.js</span><span class="spec-val" id="spec-node">—</span></div>
+            <div class="spec-row"><span class="spec-key">V8 Engine</span><span class="spec-val" id="spec-v8">—</span></div>
+            <div class="spec-row"><span class="spec-key">Memory</span><span class="spec-val" id="spec-mem">—</span></div>
+          </div>
+        </section>
+
+        <section class="well">
+          <h2>Resources & Links</h2>
+          <div class="links-row">
+            <button type="button" class="k-link-btn" id="link-github">GitHub</button>
+            <button type="button" class="k-link-btn" id="link-releases">Releases</button>
+            <button type="button" class="k-link-btn" id="link-issues">Issues</button>
+          </div>
+        </section>
+      </div>
+
     </main>
     <!-- sichtbarer Griff unten rechts; das Ziehen selbst uebernehmen die Randzonen -->
     <div id="grip" aria-hidden="true"></div>

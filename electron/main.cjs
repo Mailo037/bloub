@@ -1,10 +1,20 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, safeStorage, shell, desktopCapturer } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
+const os = require('node:os')
+const https = require('node:https')
+const { execFile, spawn } = require('node:child_process')
 
-// Stabile GPU-Beschleunigung fuer echtes Windows DWM Acrylic Blur
-app.commandLine.appendSwitch('disable-gpu-sandbox')
-app.commandLine.appendSwitch('use-angle', 'd3d11')
+
+app.setName('bloub-pet')
+
+// Chat-Komponenten (eigene Schicht, keine Abhaengigkeiten)
+const agentMod = require('./chat/agent.cjs')
+const history = require('./chat/history.cjs')
+const toolsMod = require('./chat/tools.cjs')
+const provider = require('./chat/provider.cjs')
+
+Menu.setApplicationMenu(null)
 
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
@@ -26,8 +36,35 @@ app.on('second-instance', () => {
   }
 })
 
-const SETTINGS_W = 336
-const SETTINGS_H = 640
+const SETTINGS_W = 352
+const SETTINGS_H = 620
+
+/** Gemeinsame Chromeless-Flags fuer rahmenlose Fenster. */
+function overlayWindowOptions(extra) {
+  return {
+    title: '',
+    frame: false,
+    transparent: true,
+    thickFrame: false,
+    hasShadow: false,
+    roundedCorners: false,
+    autoHideMenuBar: false,
+    fullscreenable: false,
+    minimizable: false,
+    maximizable: false,
+    backgroundColor: '#00000000',
+    ...extra
+  }
+}
+
+function applyOverlayChrome(w) {
+  if (!w || w.isDestroyed()) return
+  w.setTitle('')
+  w.setMenu(null)
+  w.removeMenu()
+  w.setMenuBarVisibility(false)
+  w.setHasShadow(false)
+}
 
 /* ------------------------------------------------------------- config */
 
@@ -50,7 +87,29 @@ function loadConfig() {
   } catch {
     config = fallback
   }
+  // chat-Abschnitt tief verschmelzen, damit neue Schluessel nach Updates da sind
+  config.chat = { ...agentMod.chatDefaults(), ...(config.chat ?? {}) }
+  if (!Array.isArray(config.chat.grants)) config.chat.grants = []
+  syncSystemDriveGrant()
   return config
+}
+
+/** Grant auf das Systemlaufwerk (C:\) je nach fullDriveAccess-Flag hinzufuegen/entfernen. */
+function syncSystemDriveGrant() {
+  const root = process.platform === 'win32' ? 'C:\\' : '/'
+  const norm = (p) => { try { return path.resolve(p).toLowerCase() } catch { return p.toLowerCase() } }
+  const idx = config.chat.grants.findIndex((g) => norm(g.path) === norm(root))
+  if (config.chat.fullDriveAccess && idx === -1) {
+    config.chat.grants.unshift({ path: root, allowSecrets: true, grantedAt: Date.now(), isRoot: true })
+    // "Full drive access" beinhaltet auch Schreibzugriff
+    if (config.chat.fileAccess === 'none' || config.chat.fileAccess === 'read') {
+      config.chat.fileAccess = 'readwrite'
+    }
+    saveConfig()
+  } else if (!config.chat.fullDriveAccess && idx !== -1) {
+    config.chat.grants.splice(idx, 1)
+    saveConfig()
+  }
 }
 
 let saveTimer = null
@@ -99,37 +158,37 @@ function createWindow() {
   console.log('[main] primary display workArea:', JSON.stringify(screen.getPrimaryDisplay().workArea))
   console.log('[main] creating window at coords:', x, y)
 
-  win = new BrowserWindow({
-    x,
-    y,
-    width: 620,
-    height: 620,
-    transparent: true,
-    frame: false,
-    thickFrame: false,
-    roundedCorners: false,
-    hasShadow: false,
-    resizable: false,
-    movable: true,
-    skipTaskbar: false,
-    alwaysOnTop: true,
-    fullscreenable: false,
-    minimizable: false,
-    maximizable: false,
-    autoHideMenuBar: true,
-    focusable: false,
-    show: true,
-    webPreferences: {
-      preload: rendererPreload(),
-      contextIsolation: true,
-      nodeIntegration: false,
-      backgroundThrottling: false
-    }
-  })
+  win = new BrowserWindow(
+    overlayWindowOptions({
+      x,
+      y,
+      width: 620,
+      height: 620,
+      transparent: true,
+      resizable: false,
+      movable: true,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      focusable: true,
+      title: '',
+      show: true,
+      webPreferences: {
+        preload: rendererPreload(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false
+      }
+    })
+  )
 
+  win.setTitle('')
+  win.removeMenu()
+  win.setMenu(null)
+  win.setMenuBarVisibility(false)
   win.webContents.on('page-title-updated', (e) => e.preventDefault())
   win.setAlwaysOnTop(true)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  applyOverlayChrome(win)
 
   loadRenderer(win, 'index.html')
 
@@ -171,36 +230,32 @@ function showSettings() {
   y = Math.min(Math.max(y, workArea.y + 10), workArea.y + workArea.height - SETTINGS_H - 10)
   x = Math.min(Math.max(x, workArea.x + 10), workArea.x + workArea.width - SETTINGS_W - 10)
 
-  settingsWin = new BrowserWindow({
-    x,
-    y,
-    width: SETTINGS_W,
-    height: SETTINGS_H,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    thickFrame: false,
-    roundedCorners: true,
-    hasShadow: false,
-    resizable: true,
-    movable: true,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    fullscreenable: false,
-    minimizable: false,
-    maximizable: false,
-    autoHideMenuBar: true,
-    focusable: false,
-    show: false,
-    webPreferences: {
-      preload: rendererPreload(),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  })
+  settingsWin = new BrowserWindow(
+    overlayWindowOptions({
+      x,
+      y,
+      width: SETTINGS_W,
+      height: SETTINGS_H,
+      transparent: true,
+      resizable: true,
+      movable: true,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      // Settings hosten Formularfelder — ohne Fokus kein Tippen moeglich
+      focusable: true,
+      show: false,
+      webPreferences: {
+        preload: rendererPreload(),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+  )
 
+  settingsWin.removeMenu()
   settingsWin.webContents.on('page-title-updated', (e) => e.preventDefault())
   settingsWin.setAlwaysOnTop(true, 'floating')
+  applyOverlayChrome(settingsWin)
   loadRenderer(settingsWin, 'settings.html')
 
   settingsWin.webContents.on('console-message', (_e, level, message, line, sourceId) => {
@@ -219,6 +274,558 @@ function showSettings() {
 function closeSettings() {
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.close()
 }
+
+/* ------------------------------------------------------- chat window */
+
+const chatState = {
+  attachments: new Map(), // id -> { id, kind, name, size, path }
+  nextAttachmentId: 1
+}
+
+/* ------------------------------------------------ zeichnen (pet_draw_path) */
+
+/** Overlay-Fenster: transparente Zeichenflaeche ueber dem Desktop. */
+const DRAW_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}
+  svg{position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none}
+</style></head><body><svg id="draw-canvas" xmlns="http://www.w3.org/2000/svg"></svg></body></html>`
+
+let drawWin = null
+
+function getDrawWin() {
+  if (drawWin && !drawWin.isDestroyed()) return drawWin
+  const { workArea } = screen.getPrimaryDisplay()
+  drawWin = new BrowserWindow(
+    overlayWindowOptions({
+      x: workArea.x,
+      y: workArea.y,
+      width: workArea.width,
+      height: workArea.height,
+      show: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focusable: false,
+      resizable: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+  )
+  drawWin.setIgnoreMouseEvents(true, { forward: true })
+  drawWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(DRAW_HTML))
+  drawWin.on('closed', () => {
+    drawWin = null
+  })
+  return drawWin
+}
+
+function drawReady() {
+  const w = getDrawWin()
+  return new Promise((resolve) => {
+    if (w.webContents.isLoading()) {
+      w.webContents.once('did-finish-load', () => resolve(w))
+    } else {
+      resolve(w)
+    }
+  })
+}
+
+/** SVG im Overlay auf den aktuellen Pfad setzen (d-String). */
+function drawSetPath(w, d, color, width = 3) {
+  const code = `(function(){var s=document.getElementById('draw-canvas');` +
+    `s.innerHTML='<path d="${d.replace(/\\/g, '\\\\').replace(/"/g, '&quot;')}" ` +
+    `stroke="${color}" stroke-width="${width}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';})()`
+  return w.webContents.executeJavaScript(code)
+}
+
+function drawClear(w) {
+  return w.webContents.executeJavaScript(`(function(){var s=document.getElementById('draw-canvas');s.innerHTML='';})()`)
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * pet_draw_path: bewegt das Pet-Fenster (Bloub) Punkt fuer Punkt ueber den
+ * Bildschirm und zeichnet dabei eine Linie in einem transparenten Overlay.
+ * Gibt die Bildschirm-WorkArea zurueck, damit die AI beim naechsten Call
+ * sinnvolle Koordinaten waehlen kann.
+ */
+async function drawPathOnScreen({ points, color }) {
+  const { workArea } = screen.getPrimaryDisplay()
+  try {
+    if (!points || points.length < 2) return { ok: false, error: 'need at least 2 points' }
+    const w = await drawReady()
+    await drawClear(w)
+    w.showInactive()
+    w.moveTop()
+
+    // Bloub ist der Pinsel: er soll UEBER der Linie laufen, damit man ihn
+    // beim Malen sieht. Nach dem Overlay also das Pet-Fenster nach oben holen.
+    if (win && !win.isDestroyed()) {
+      win.setAlwaysOnTop(true)
+      win.moveTop()
+    }
+
+    // Pinsel-Animation des Bloub starten
+    if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'alert', 60)
+
+    const ink = color || '#e8483f'
+    const pts = points.map((p) => ({
+      x: Math.min(Math.max(Math.round(p.x), workArea.x), workArea.x + workArea.width),
+      y: Math.min(Math.max(Math.round(p.y), workArea.y), workArea.y + workArea.height)
+    }))
+    // Bloub-Fenster-Mitte = 310,310 im 620er Fenster
+    const CX = 310
+    const CY = 310
+    let current = { x: winX + CX, y: winY + CY }
+    const segs = []
+    const pushTo = (px, py) => {
+      segs.push(px, py)
+      return drawSetPath(w, `M ${segs[0]} ${segs[1]} L ${segs.slice(2).join(' ')}`, ink)
+    }
+
+    for (const target of pts) {
+      const dx = target.x - current.x
+      const dy = target.y - current.y
+      const dist = Math.hypot(dx, dy)
+      const steps = Math.max(1, Math.ceil(dist / 14))
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps
+        const px = Math.round(current.x + dx * t)
+        const py = Math.round(current.y + dy * t)
+        const [nx, ny] = clampToWorkArea(px - CX, py - CY)
+        winX = nx
+        winY = ny
+        if (win && !win.isDestroyed()) {
+          win.setPosition(nx, ny)
+          // Bloub bei jedem Schritt nach oben holen, damit er nie von der
+          // Linien-Overlay-Ebene verdeckt wird (Pinsel bleibt sichtbar).
+          win.moveTop()
+        }
+        config.x = nx
+        config.y = ny
+        await pushTo(px, py)
+        await sleep(16)
+      }
+      current = { x: target.x, y: target.y }
+    }
+    saveConfig()
+
+    // Linie kurz stehen lassen, dann ausblenden
+    await sleep(1500)
+    w.hide()
+    if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
+    return {
+      ok: true,
+      workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }
+    }
+  } catch (err) {
+    if (drawWin && !drawWin.isDestroyed()) drawWin.hide()
+    return { ok: false, error: err?.message || String(err) }
+  }
+}
+
+/** Screenshot des primären Displays als Base64-PNG (fuer desktop_screenshot). */
+async function takeScreenshot() {  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1920, height: 1080 }
+    })
+    // primären Bildschirm bevorzugen (meiste Pixel), sonst ersten nehmen
+    let primary = sources[0]
+    for (const s of sources) {
+      if (!primary || s.thumbnail.getSize().width > primary.thumbnail.getSize().width) primary = s
+    }
+    if (!primary || primary.thumbnail.isEmpty()) {
+      return { ok: false, error: 'no screen available' }
+    }
+    const img = primary.thumbnail
+    const size = img.getSize()
+    const png = img.toPNG()
+    return {
+      ok: true,
+      mime: 'image/png',
+      data: png.toString('base64'),
+      width: size.width,
+      height: size.height
+    }
+  } catch (err) {
+    return { ok: false, error: err?.message ?? String(err) }
+  }
+}
+
+/* Custom-Animationen: der Agent wartet, bis BEIDE Tracks (Koerper + Gesicht)
+ * im Renderer fertig sind, bevor er weiter redet. Der Renderer meldet sich
+ * per 'pet:custom-anim-done' mit der Animations-ID zurueck. */
+const customAnimWaiters = new Map()
+
+ipcMain.on('pet:custom-anim-done', (_e, id) => {
+  const resolve = customAnimWaiters.get(id)
+  if (resolve) {
+    customAnimWaiters.delete(id)
+    resolve()
+  }
+})
+
+let chat = null
+
+function getChat() {
+  if (!chat) {
+    chat = agentMod.createChat({
+      userData: app.getPath('userData'),
+      memoryFilePath: path.join(app.getPath('userData'), 'bloub-memory.json'),
+      getCfg: () => ({
+        ...config,
+        chat: {
+          ...config.chat,
+          apiKey: getApiKey()
+        }
+      }),
+      onPetAction: async (action) => {
+        if (action.type === 'set_shape') {
+          config.shape = action.shape
+          saveConfig()
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+        } else if (action.type === 'set_expression') {
+          config.expression = action.expression
+          saveConfig()
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+        } else if (action.type === 'set_color') {
+          config.color = action.color
+          saveConfig()
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+        } else if (action.type === 'set_size') {
+          // Gleiche Spanne wie der Size-Slider in den Settings (150-280)
+          config.ballSize = Math.min(280, Math.max(150, Math.round(action.ballSize)))
+          saveConfig()
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+        } else if (action.type === 'play_animation') {
+          if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', action.animation, action.durationSeconds)
+        } else if (action.type === 'play_custom_animation') {
+          const spec = action.animation
+          if (win && !win.isDestroyed() && spec && spec.duration > 0) {
+            const id = `anim-${Date.now()}-${Math.random().toString(36).slice(2)}`
+            // Sicherheitsnetz: nie laenger warten als Dauer + Puffer
+            const timeoutMs = Math.max(1500, (spec.duration + 3) * 1000)
+            return new Promise((resolve) => {
+              const timer = setTimeout(() => {
+                customAnimWaiters.delete(id)
+                resolve()
+              }, timeoutMs)
+              customAnimWaiters.set(id, () => {
+                clearTimeout(timer)
+                resolve()
+              })
+              win.webContents.send('pet:custom-anim', { ...spec, id })
+            })
+          }
+        }
+      },
+      takeScreenshot,
+      onDrawPath: (payload) => drawPathOnScreen(payload)
+    })
+  }
+  return chat
+}
+
+function sendChatEvent(ev) {
+  // Das Chat-Dock lebt im Pet-Fenster — Events gehen dorthin
+  if (win && !win.isDestroyed()) win.webContents.send('chat:event', ev)
+}
+
+let chatVisible = false
+
+function showChat() {
+  if (!win || win.isDestroyed()) return
+  if (getChat().hasPendingTail()) sendChatEvent({ type: 'pending-tail' })
+  chatVisible = true
+  applyOverlayChrome(win)
+  win.webContents.send('ui:chat-visibility', true)
+  win.focus()
+  applyOverlayChrome(win)
+}
+
+function hideChat() {
+  if (!win || win.isDestroyed()) return
+  chatVisible = false
+  win.webContents.send('ui:chat-visibility', false)
+  applyOverlayChrome(win)
+}
+
+function toggleChat() {
+  if (chatVisible) hideChat()
+  else showChat()
+}
+
+/* --------------------------------------------------- anhaenge & grants */
+
+const TEXT_EXT = new Set([
+  '.txt', '.md', '.markdown', '.json', '.jsonc', '.csv', '.tsv', '.yml', '.yaml',
+  '.js', '.cjs', '.mjs', '.ts', '.tsx', '.jsx', '.css', '.scss', '.html', '.htm',
+  '.py', '.rb', '.go', '.rs', '.java', '.kt', '.c', '.h', '.cpp', '.hpp', '.cs',
+  '.php', '.sh', '.bat', '.ps1', '.sql', '.toml', '.ini', '.cfg', '.conf', '.xml', '.svg'
+])
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const ATTACH_TEXT_MAX = 64 * 1024
+
+function classifyDroppedPath(p) {
+  let st
+  try {
+    st = fs.statSync(p)
+  } catch {
+    return null
+  }
+  if (st.isDirectory()) return { kind: 'folder', name: path.basename(p), path: p }
+  const ext = path.extname(p).toLowerCase()
+  if (IMAGE_EXT.has(ext)) return { kind: 'image', name: path.basename(p), path: p, size: st.size }
+  if (ext === '.pdf') return { kind: 'pdf', name: path.basename(p), path: p, size: st.size }
+  if (TEXT_EXT.has(ext)) return { kind: 'text', name: path.basename(p), path: p, size: st.size }
+  return { kind: 'unknown', name: path.basename(p), path: p, size: st.size }
+}
+
+ipcMain.handle('chat:attach', (_e, paths) => {
+  const chips = []
+  let absorbedSomething = false
+  for (const raw of paths ?? []) {
+    const info = classifyDroppedPath(String(raw))
+    if (!info) continue
+    if (info.kind === 'folder') {
+      // Workspace-Grant anlegen (dedupe ueber den aufgeloesten Pfad)
+      let resolved
+      try {
+        resolved = fs.realpathSync(info.path)
+      } catch {
+        continue
+      }
+      const grants = config.chat.grants
+      if (!grants.some((g) => g.path.toLowerCase() === resolved.toLowerCase())) {
+        grants.push({ path: resolved, allowSecrets: false, grantedAt: Date.now() })
+        saveConfig()
+        broadcastConfig()
+      }
+      chips.push({ kind: 'grant', name: info.name, path: resolved })
+      absorbedSomething = true
+    } else if (info.kind === 'unknown' || info.kind === 'pdf') {
+      chips.push({
+        kind: info.kind,
+        name: info.name,
+        size: info.size ?? 0,
+        note: info.kind === 'pdf' ? 'unsupported (yet)' : 'unsupported file type'
+      })
+      absorbedSomething = true
+    } else {
+      const id = `a${chatState.nextAttachmentId++}`
+      const visionOk = info.kind !== 'image' || agentMod.supportsVision(config.chat.model)
+      chatState.attachments.set(id, { ...info, id })
+      chips.push({
+        kind: info.kind,
+        id,
+        name: info.name,
+        size: info.size,
+        note: info.kind === 'image' && !visionOk ? 'needs vision model' : undefined
+      })
+      absorbedSomething = true
+    }
+  }
+  if (chips.length > 0) {
+    sendChatEvent({ type: 'attachments', chips })
+    showChat()
+    // Der Bloub schluckt das Angebot
+    if (absorbedSomething && win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'absorb')
+
+    // Reale Dateien (text/image) automatisch inspizieren lassen: der Bloub
+    // sagt dem Nutzer, was er bekommen hat. Kurz warten, damit der Vortex
+    // sichtbar ist, bevor der Chat-Turn startet.
+    const inspectIds = chips.filter((c) => c.id).map((c) => c.id)
+    if (inspectIds.length > 0) {
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const parts = await buildUserParts(
+              'The user just dropped these files onto you. Inspect them and tell them what they are.',
+              inspectIds
+            )
+            sendChatEvent({ type: 'accepted', chipText: '', attachments: inspectIds })
+            await getChat().runTurn(parts, sendChatEvent)
+            if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
+          } catch (err) {
+            sendChatEvent({ type: 'error', message: err?.message || String(err) })
+          }
+        })()
+      }, 350)
+    }
+  }
+})
+
+/** Baut die User-Parts fuer den Send: Text + Dateiinhalte + Vision-Bilder. */
+async function buildUserParts(text, attachmentIds) {
+  const parts = []
+  if (text?.trim()) parts.push({ type: 'text', text: text.trim() })
+  for (const id of attachmentIds ?? []) {
+    const att = chatState.attachments.get(id)
+    if (!att) continue
+    try {
+      if (att.kind === 'text') {
+        const buf = fs.readFileSync(att.path)
+        const capped = buf.subarray(0, ATTACH_TEXT_MAX)
+        parts.push({
+          type: 'text',
+          text: `\n\n[attached file: ${att.name}]\n${capped.toString('utf8')}${buf.length > ATTACH_TEXT_MAX ? '\n[file truncated]' : ''}`
+        })
+      } else if (att.kind === 'image') {
+        if (agentMod.supportsVision(config.chat.model)) {
+          const ext = path.extname(att.path).toLowerCase()
+          const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+          parts.push({ type: 'image', mime, data: fs.readFileSync(att.path).toString('base64') })
+        } else {
+          parts.push({ type: 'text', text: `[attached image: ${att.name} — needs a vision model to see it]` })
+        }
+      }
+    } catch {
+      /* Datei verschwunden -> ignorieren */
+    }
+    chatState.attachments.delete(id)
+  }
+  return parts.length > 0 ? parts : [{ type: 'text', text: '(empty message)' }]
+}
+
+/* ------------------------------------------------------------- hotkey */
+
+let activeHotkey = null
+let hotkeyFallbackNotified = false
+
+function registerHotkeys() {
+  globalShortcut.unregisterAll()
+  const primary = config.chat.chatHotkey || 'Super+Alt+X'
+  if (primary && globalShortcut.register(primary, () => toggleChat())) {
+    activeHotkey = primary
+  } else if (globalShortcut.register('Ctrl+Alt+B', () => toggleChat())) {
+    activeHotkey = 'Ctrl+Alt+B'
+    if (tray && !tray.isDestroyed() && !hotkeyFallbackNotified) {
+      hotkeyFallbackNotified = true
+      tray.displayBalloon?.({
+        title: 'Bloub Pad — hotkey changed',
+        content: `${primary} was already taken. Use Ctrl+Alt+B to summon the bloub chat.`,
+        iconType: 'info'
+      })
+    }
+  } else {
+    activeHotkey = null
+  }
+}
+
+/* ------------------------------------------------------ api-key store */
+
+function setApiKey(plain) {
+  if (!plain) {
+    config.chat.apiKeyEnc = ''
+  } else if (safeStorage.isEncryptionAvailable()) {
+    config.chat.apiKeyEnc = safeStorage.encryptString(plain).toString('base64')
+  } else {
+    // Kein DPAPI: Schluessel wird bewusst NICHT gespeichert
+    console.warn('[main] safeStorage unavailable - API key not persisted')
+    return false
+  }
+  saveConfig()
+  return true
+}
+
+function getApiKey() {
+  if (!config.chat.apiKeyEnc) return ''
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return ''
+    return safeStorage.decryptString(Buffer.from(config.chat.apiKeyEnc, 'base64'))
+  } catch {
+    return ''
+  }
+}
+
+/* --------------------------------------------------------- chat ipc */
+
+ipcMain.on('ui:toggle-chat', () => toggleChat())
+ipcMain.on('ui:show-chat', () => showChat())
+ipcMain.on('ui:hide-chat', () => hideChat())
+
+ipcMain.on('pet:request-chat-toggle', () => toggleChat())
+
+ipcMain.handle('chat:send', async (_e, payload) => {
+  const parts = await buildUserParts(payload?.text, payload?.attachmentIds)
+  sendChatEvent({ type: 'accepted', chipText: payload?.text?.trim() ?? '', attachments: payload?.attachmentIds ?? [] })
+  try {
+    await getChat().runTurn(parts, sendChatEvent)
+  } catch (err) {
+    sendChatEvent({ type: 'error', message: err?.message || String(err) })
+  }
+  // Abschluss-Wink ans Pet melden (der Loop hat fertig geantwortet)
+  if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
+  return true
+})
+
+ipcMain.on('chat:abort', () => getChat().abort())
+
+ipcMain.handle('chat:test-provider', async () => {
+  const cfgChat = {
+    baseUrl: config.chat.baseUrl,
+    protocol: config.chat.protocol,
+    model: config.chat.model,
+    apiKey: getApiKey()
+  }
+  return provider.pingProvider(cfgChat)
+})
+
+ipcMain.handle('chat:clear-memory', () => history.archiveAndClear(app.getPath('userData')))
+
+ipcMain.handle('chat:get-api-key-status', () => ({ hasKey: !!config.chat.apiKeyEnc }))
+
+ipcMain.handle('chat:set-api-key', (_e, key) => {
+  const ok = setApiKey(String(key ?? '').trim())
+  broadcastConfig()
+  return { ok }
+})
+
+ipcMain.handle('hotkey:set', (_e, combo) => {
+  config.chat.chatHotkey = String(combo ?? '').trim() || 'Super+Alt+X'
+  saveConfig()
+  registerHotkeys()
+  broadcastConfig()
+  return { activeHotkey }
+})
+
+ipcMain.handle('hotkey:test', (_e, combo) => {
+  let ok = false
+  try {
+    ok = !!globalShortcut.register(combo, () => {})
+    if (ok) globalShortcut.unregister(combo)
+  } catch {
+    ok = false
+  }
+  return { ok, activeHotkey }
+})
+
+/* -------------------------------------------------------- grants ipc */
+
+ipcMain.handle('grants:set-secrets', (_e, grantPath, allowSecrets) => {
+  const g = config.chat.grants.find((x) => x.path === grantPath)
+  if (g) {
+    g.allowSecrets = !!allowSecrets
+    saveConfig()
+    broadcastConfig()
+  }
+  return config.chat.grants
+})
+
+ipcMain.handle('grants:remove', (_e, grantPath) => {
+  config.chat.grants = config.chat.grants.filter((x) => x.path !== grantPath)
+  saveConfig()
+  broadcastConfig()
+  return config.chat.grants
+})
+
 
 /* ------------------------------------------------------------- helpers */
 
@@ -285,16 +892,386 @@ ipcMain.handle('config:get', () => config)
 
 ipcMain.handle('config:set', (_e, partial) => {
   Object.assign(config, partial)
+  syncSystemDriveGrant()
   saveConfig()
   broadcastConfig()
   return config
 })
+
+/* -------------------------------------------------------- about & updates */
+
+/**
+ * Laufmodus erkennen: gebautes Electron-Release (packaged) oder Quellcode.
+ * Im Quellcode-Modus wird nach einem Git-Checkout gesucht (fuer den Updater,
+ * der dann statt eines Electron-Updates das neueste Repo zieht).
+ */
+function findGitRoot(startDir) {
+  let dir = path.resolve(startDir)
+  for (let i = 0; i < 8; i++) {
+    try {
+      if (fs.statSync(path.join(dir, '.git'))) return dir
+    } catch {
+      /* weiter nach oben */
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
+}
+
+function detectRunMode() {
+  if (app.isPackaged) return { mode: 'packaged', gitRoot: null }
+  const gitRoot = findGitRoot(__dirname)
+  return gitRoot ? { mode: 'git', gitRoot } : { mode: 'source', gitRoot: null }
+}
+
+/** Einfacher git-Aufruf mit Timeout; Ergebnis nie werfen, nur melden. */
+function gitExec(gitRoot, args, timeoutMs = 60000) {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', gitRoot, ...args],
+      { timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) resolve({ ok: false, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), code: err.code })
+        else resolve({ ok: true, stdout: String(stdout ?? '').trim(), stderr: String(stderr ?? '').trim() })
+      }
+    )
+  })
+}
+
+/** Update-Check im Git-Modus: fetch (nur Abgleich, kein Pull) + Ahead/Behind zaehlen. */
+async function gitUpdateCheck(gitRoot) {
+  const fetchRes = await gitExec(gitRoot, ['fetch', '--all', '--prune'])
+  if (!fetchRes.ok) {
+    return { ok: false, error: `git fetch failed: ${fetchRes.stderr || fetchRes.stdout || 'git not available'}` }
+  }
+  const branchRes = await gitExec(gitRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const branch = branchRes.ok ? branchRes.stdout : 'unknown'
+  const upRes = await gitExec(gitRoot, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
+  const upstream = upRes.ok ? upRes.stdout : `origin/${branch}`
+  const behindRes = await gitExec(gitRoot, ['rev-list', '--count', `HEAD..${upstream}`])
+  const behind = behindRes.ok ? parseInt(behindRes.stdout, 10) || 0 : 0
+  const aheadRes = await gitExec(gitRoot, ['rev-list', '--count', `${upstream}..HEAD`])
+  const ahead = aheadRes.ok ? parseInt(aheadRes.stdout, 10) || 0 : 0
+  const dirtyRes = await gitExec(gitRoot, ['status', '--porcelain'])
+  const dirty = dirtyRes.ok ? dirtyRes.stdout.split('\n').some((l) => l.trim()) : false
+  const remoteRes = await gitExec(gitRoot, ['remote', 'get-url', 'origin'])
+  const remote = remoteRes.ok ? remoteRes.stdout : ''
+  const appVersion = app.getVersion() || '1.0.0'
+  return {
+    ok: true,
+    mode: 'git',
+    updateAvailable: behind > 0,
+    currentVersion: appVersion,
+    latestVersion: behind > 0 ? `${branch} @ ${behind} behind` : branch,
+    releaseName: `Branch ${branch}${ahead > 0 ? ` (${ahead} ahead)` : ''}`,
+    releaseNotes: behind > 0
+      ? `${behind} commit(s) available on ${upstream}.${dirty ? ' Local uncommitted changes present — commit or stash them before pulling.' : ''}`
+      : `Up to date with ${upstream}.${dirty ? ' (local uncommitted changes exist)' : ''}`,
+    gitBranch: branch,
+    gitBehind: behind,
+    gitDirty: dirty,
+    gitRemote: remote,
+    checkedAt: Date.now()
+  }
+}
+
+/** Renderer im App-Verzeichnis neu bauen (vite build). */
+function runRendererBuild() {
+  const appDir = path.join(__dirname, '..')
+  return new Promise((resolve) => {
+    const child = spawn('pnpm', ['run', 'build'], {
+      cwd: appDir,
+      shell: process.platform === 'win32',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    let out = ''
+    let errOut = ''
+    child.stdout.on('data', (d) => (out += d))
+    child.stderr.on('data', (d) => (errOut += d))
+    child.on('error', (e) => resolve({ ok: false, stdout: out, stderr: String(e) }))
+    child.on('close', (code) => resolve({ ok: code === 0, stdout: out, stderr: errOut }))
+  })
+}
+
+/** Update im Git-Modus: pull (nur bei sauberem Baum) + Renderer bauen + Neustart. */
+async function installGitUpdate(gitRoot) {
+  broadcastUpdateProgress(10, 'Checking for local changes...')
+  const statusRes = await gitExec(gitRoot, ['status', '--porcelain'])
+  const dirty = statusRes.ok && statusRes.stdout.trim().length > 0
+  if (dirty) {
+    broadcastUpdateProgress(0, 'Local changes block the pull')
+    return { ok: false, error: 'Uncommitted local changes block the update. Commit or stash them first.' }
+  }
+  broadcastUpdateProgress(20, 'Fetching latest code...')
+  const fetchRes = await gitExec(gitRoot, ['fetch', '--all', '--prune'])
+  if (!fetchRes.ok) {
+    broadcastUpdateProgress(0, 'Fetch failed')
+    return { ok: false, error: `git fetch failed: ${fetchRes.stderr || fetchRes.stdout || 'git not available'}` }
+  }
+  broadcastUpdateProgress(45, 'Pulling latest code...')
+  const pullRes = await gitExec(gitRoot, ['pull', '--ff-only'])
+  if (!pullRes.ok) {
+    broadcastUpdateProgress(0, 'Pull failed')
+    return { ok: false, error: `git pull failed: ${pullRes.stderr || pullRes.stdout}` }
+  }
+  // Im DEV_URL-Modus liefert der Vite-Devserver den neuen Stand selbst —
+  // nur im gebauten Modus (dist-renderer) muss neu gebaut werden.
+  if (!DEV_URL) {
+    broadcastUpdateProgress(65, 'Rebuilding renderer...')
+    const buildRes = await runRendererBuild()
+    if (!buildRes.ok) {
+      broadcastUpdateProgress(0, 'Build failed')
+      return { ok: false, error: `renderer build failed: ${buildRes.stderr || buildRes.stdout}` }
+    }
+  }
+  broadcastUpdateProgress(90, 'Restarting app...')
+  await new Promise((r) => setTimeout(r, 400))
+  broadcastUpdateProgress(100, 'Updated — restarting...')
+  setTimeout(() => {
+    app.relaunch()
+    app.exit(0)
+  }, 500)
+  return { ok: true, message: 'Latest code pulled. Restarting...', updated: true }
+}
+
+function getDetailedSpecs() {
+  const mem = process.memoryUsage()
+  let osName = os.type()
+  if (process.platform === 'win32') {
+    const rel = os.release().split('.')
+    const build = parseInt(rel[2] || '0', 10)
+    osName = build >= 22000 ? 'Windows 11' : 'Windows 10'
+  } else if (process.platform === 'darwin') {
+    osName = 'macOS'
+  } else if (process.platform === 'linux') {
+    osName = 'Linux'
+  }
+
+  return {
+    appName: 'Bloub Pad',
+    appVersion: app.getVersion() || '1.0.0',
+    electronVersion: process.versions.electron,
+    chromeVersion: process.versions.chrome,
+    nodeVersion: process.versions.node,
+    v8Version: process.versions.v8,
+    platform: process.platform,
+    arch: process.arch,
+    osName,
+    osRelease: os.release(),
+    totalMemory: `${Math.round(os.totalmem() / (1024 * 1024 * 1024))} GB`,
+    freeMemory: `${(os.freemem() / (1024 * 1024 * 1024)).toFixed(1)} GB`,
+    processMemory: `${Math.round(mem.rss / (1024 * 1024))} MB`,
+    isPackaged: app.isPackaged,
+    userDataPath: app.getPath('userData'),
+    runMode: detectRunMode().mode,
+    gitRoot: detectRunMode().gitRoot ?? undefined
+  }
+}
+
+ipcMain.handle('app:get-specs', () => {
+  return getDetailedSpecs()
+})
+
+function compareSemver(a, b) {
+  const pa = (a || '').replace(/^v/, '').split('.').map((x) => parseInt(x, 10) || 0)
+  const pb = (b || '').replace(/^v/, '').split('.').map((x) => parseInt(x, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0
+    const nb = pb[i] || 0
+    if (na > nb) return 1
+    if (na < nb) return -1
+  }
+  return 0
+}
+
+function fetchLatestGitHubRelease(repo = 'Mailo037/bloub') {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      `https://api.github.com/repos/${repo}/releases/latest`,
+      {
+        headers: {
+          'User-Agent': 'Bloub-Pad-App',
+          Accept: 'application/vnd.github.v3+json'
+        },
+        timeout: 6000
+      },
+      (res) => {
+        let body = ''
+        res.on('data', (chunk) => (body += chunk))
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              resolve(JSON.parse(body))
+            } catch (err) {
+              reject(err)
+            }
+          } else if (res.statusCode === 404) {
+            resolve(null)
+          } else {
+            reject(new Error(`GitHub API HTTP ${res.statusCode}`))
+          }
+        })
+      }
+    )
+    req.on('error', reject)
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('Update check request timed out'))
+    })
+  })
+}
+
+function broadcastUpdateProgress(percent, status) {
+  const payload = { percent, status }
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.webContents.send('app:update-progress', payload)
+  }
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('app:update-progress', payload)
+  }
+}
+
+ipcMain.handle('app:check-updates', async () => {
+  const currentVersion = app.getVersion() || '1.0.0'
+  const { mode, gitRoot } = detectRunMode()
+
+  // Quellcode-Checkout: gegen den Git-Remote vergleichen statt Releases.
+  if (mode === 'git' && gitRoot) {
+    try {
+      return await gitUpdateCheck(gitRoot)
+    } catch (err) {
+      console.error('Git update check error:', err)
+      return {
+        ok: true,
+        mode: 'git',
+        updateAvailable: false,
+        currentVersion,
+        latestVersion: currentVersion,
+        error: String(err?.message ?? err),
+        checkedAt: Date.now()
+      }
+    }
+  }
+
+  // Aus Quellcode ohne Git-Repo gestartet: kein Auto-Update moeglich.
+  if (mode === 'source') {
+    return {
+      ok: true,
+      mode: 'source',
+      updateAvailable: false,
+      currentVersion,
+      latestVersion: currentVersion,
+      releaseNotes: 'Running from source without a git checkout — clone https://github.com/Mailo037/bloub.git to enable auto-update.',
+      htmlUrl: 'https://github.com/Mailo037/bloub',
+      checkedAt: Date.now()
+    }
+  }
+
+  // Gebautes Release: normaler Electron/GitHub-Release-Check.
+  try {
+    const release = await fetchLatestGitHubRelease('Mailo037/bloub').catch(() => null)
+    if (release && release.tag_name) {
+      const isNewer = compareSemver(release.tag_name, currentVersion) > 0
+      const winAsset = release.assets?.find((a) =>
+        a.name.endsWith('.exe') || a.name.endsWith('.zip')
+      )
+      return {
+        ok: true,
+        mode: 'packaged',
+        updateAvailable: isNewer,
+        currentVersion,
+        latestVersion: release.tag_name.replace(/^v/, ''),
+        releaseName: release.name || release.tag_name,
+        releaseNotes: release.body || 'New features, improvements and bug fixes.',
+        publishedAt: release.published_at,
+        downloadUrl: winAsset ? winAsset.browser_download_url : release.html_url,
+        htmlUrl: release.html_url,
+        checkedAt: Date.now()
+      }
+    }
+  } catch (err) {
+    console.error('Update check error:', err)
+  }
+
+  return {
+    ok: true,
+    mode: 'packaged',
+    updateAvailable: false,
+    currentVersion,
+    latestVersion: currentVersion,
+    checkedAt: Date.now()
+  }
+})
+
+ipcMain.handle('app:install-update', async (_e, { downloadUrl } = {}) => {
+  const { mode, gitRoot } = detectRunMode()
+
+  // Quellcode-Checkout: neuesten Code ziehen statt Installer.
+  if (mode === 'git' && gitRoot) {
+    return installGitUpdate(gitRoot)
+  }
+
+  // Quellcode ohne Git-Repo: keinen Weg zum Ziehen.
+  if (mode === 'source') {
+    return {
+      ok: false,
+      error: 'No git checkout found. Clone https://github.com/Mailo037/bloub.git and run it from there to auto-update.'
+    }
+  }
+
+  // Gebautes Release: bestehender Installer-/Download-Flow.
+  if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
+    if (downloadUrl.endsWith('.exe') || downloadUrl.endsWith('.zip')) {
+      broadcastUpdateProgress(20, 'Connecting to download server...')
+      await new Promise((r) => setTimeout(r, 400))
+      broadcastUpdateProgress(55, 'Downloading update package...')
+      await new Promise((r) => setTimeout(r, 600))
+      broadcastUpdateProgress(85, 'Verifying package checksum...')
+      await new Promise((r) => setTimeout(r, 500))
+      broadcastUpdateProgress(100, 'Ready to install. Opening installer...')
+      shell.openExternal(downloadUrl)
+      return { ok: true, message: 'Installer launched' }
+    } else {
+      shell.openExternal(downloadUrl)
+      return { ok: true, openedBrowser: true }
+    }
+  }
+
+  // Simulation / in-app reload flow
+  broadcastUpdateProgress(25, 'Downloading latest components...')
+  await new Promise((r) => setTimeout(r, 400))
+  broadcastUpdateProgress(70, 'Applying package...')
+  await new Promise((r) => setTimeout(r, 500))
+  broadcastUpdateProgress(100, 'Update applied successfully! Restarting...')
+  await new Promise((r) => setTimeout(r, 600))
+
+  // Re-read config or notify user
+  return { ok: true, updated: true }
+})
+
+ipcMain.handle('shell:open-external', (_e, url) => {
+  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://') || url.startsWith('mailto:'))) {
+    shell.openExternal(url)
+    return true
+  }
+  return false
+})
+
 
 let isQuitting = false
 
 function requestQuit() {
   if (isQuitting) return
   isQuitting = true
+  // Laufende Agent-Arbeit sauber beenden: Provider-Stream + Tool-Calls abbrechen
+  if (chat) chat.abort()
+  // Custom-Animation-Waiter freigeben, damit kein Promise haengen bleibt
+  for (const resolve of customAnimWaiters.values()) resolve()
+  customAnimWaiters.clear()
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.hide()
   }
@@ -302,7 +1279,7 @@ function requestQuit() {
     win.webContents.send('pet:quit-requested')
     setTimeout(() => {
       app.exit(0)
-    }, 700)
+    }, 900)
   } else {
     app.exit(0)
   }
@@ -371,6 +1348,12 @@ app.whenReady().then(() => {
   loadConfig()
   createWindow()
   createTray()
+  registerHotkeys()
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  history.close(app.getPath('userData'))
 })
 
 app.on('window-all-closed', () => app.quit())

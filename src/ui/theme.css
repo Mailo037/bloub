@@ -1,0 +1,38 @@
+/*
+ * Bloub Theme-Tokens — AN ASTRYX ANGELEHNT, handgerollt.
+ *
+ * Astryx (https://astryx.atmeta.com) nutzt Token-basiertes Theming; das
+ * Prinzip uebernehmen wir ohne seine Abhaengigkeiten (React 19 + StyleX
+ * wuerden gegen die No-New-Dependencies-Regel verstossen). Regel: NUR HIER
+ * Farben/Ablageraden aendern — alle Fenster leiten sich daraus ab.
+ */
+:root {
+  /* Flaechen */
+  --color-bg: #0b0d12;
+  --color-surface: rgba(11, 13, 18, 0.92);
+  --color-surface-raised: rgba(18, 20, 26, 0.97);
+  --color-input: rgba(5, 5, 7, 0.86);
+
+  /* Linien */
+  --color-border: rgba(110, 140, 220, 0.12);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Text */
+  --color-text: #e8e6e0;
+  --color-text-dim: #8b90a0;
+
+  /* Akzent — SCHWARZ/GRAU statt blau; EINE Stelle, ganze App faerbt um */
+  --color-accent: #b9bcc4;
+  --color-accent-muted: rgba(255, 255, 255, 0.08);
+  --color-accent-strong: rgba(255, 255, 255, 0.2);
+  --color-on-accent: #101014;
+
+  /* Status */
+  --color-danger: #ff6b61;
+
+  /* Radien */
+  --radius-pill: 999px;
+  --radius-lg: 22px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+}

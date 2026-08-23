@@ -305,3 +305,7 @@ export const NOTIF_POP = 1.14
  * La marge est constante (0.054 R) et suit l'echelle du corps.
  */
 export const NOTIF_MARGIN = 0.054
+
+/** Glyph "Z" vectoriel pour l'animation de sommeil, centre sur l'origine */
+export const GLYPH_Z =
+  'M -0.10 -0.11 L 0.10 -0.11 L 0.10 -0.065 L -0.04 0.065 L 0.10 0.065 L 0.10 0.11 L -0.10 0.11 L -0.10 0.065 L 0.04 -0.065 L -0.10 -0.065 Z'
