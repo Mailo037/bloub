@@ -8,6 +8,7 @@ import {
   SHAPE_LABELS,
   type Grant,
   type PetConfigShape,
+  type RecallStatus,
   type UpdateCheckResult
 } from './shared'
 
@@ -728,6 +729,193 @@ document.getElementById('link-releases')?.addEventListener('click', () => {
 document.getElementById('link-issues')?.addEventListener('click', () => {
   void bridge.openExternal?.('https://github.com/Mailo037/bloub/issues')
 })
+
+/* --------------------------------------------------------- recall section */
+
+const recallMasterSwitch = createSwitch({
+  label: 'Record my activity',
+  onChange: (checked) => {
+    void bridge.recallSetConfig?.({ enabled: checked })
+  }
+})
+document.getElementById('recall-master-slot')!.replaceChildren(recallMasterSwitch.el)
+
+// Terminal capture: eigener Opt-in-Schalter neben dem Master
+const recallShellSwitch = createSwitch({
+  label: 'Terminal commands',
+  onChange: (checked) => {
+    void bridge.recallSetConfig?.({ shell: checked })
+    if (checked && !config.recall?.enabled) {
+      // Shell-Producer braucht den Master — bewusst MIT anstellen
+      void bridge.recallSetConfig?.({ enabled: true })
+    }
+  }
+})
+document.getElementById('recall-shell-slot')!.replaceChildren(recallShellSwitch.el)
+
+const recallClipboardSwitch = createSwitch({
+  label: 'Clipboard history',
+  onChange: (checked) => {
+    void bridge.recallSetConfig?.({ clipboard: checked, ...(config.recall?.enabled === false ? { enabled: false } : {}) })
+  }
+})
+document.getElementById('recall-clipboard-slot')!.replaceChildren(recallClipboardSwitch.el)
+
+const recallBrowserSeg = createSegmented({
+  options: [
+    { value: 'off', label: 'Off' },
+    { value: 'extension', label: 'Guided extension' },
+    { value: 'cdp', label: 'Supervised relaunch' }
+  ],
+  onChange: (value) => {
+    void bridge.recallSetConfig?.({ browserLink: value })
+  }
+})
+document.getElementById('recall-browser-slot')!.replaceChildren(recallBrowserSeg.el)
+
+const recallPauseIndicator = document.getElementById('recall-pause-indicator')!
+const recallPauseBtn = document.getElementById('recall-pause-btn') as HTMLButtonElement
+recallPauseBtn.addEventListener('click', () => {
+  void bridge.recallTogglePause?.()
+})
+
+const recallShellStatus = document.getElementById('recall-shell-status')!
+const shellInstallBtn = document.getElementById('recall-shell-install-btn') as HTMLButtonElement
+const shellRemoveBtn = document.getElementById('recall-shell-remove-btn') as HTMLButtonElement
+
+shellInstallBtn.addEventListener('click', () => {
+  void bridge.recallShellInstall?.()?.then((results) => {
+    const okCount = results.filter((r) => r.changed).length
+    const err = results.find((r) => r.error)
+    recallShellStatus.textContent = err
+      ? `✗ ${err.error}`
+      : okCount > 0
+        ? '✓ profile hooks installed — open a new terminal'
+        : 'already installed'
+    void refreshRecallStatus()
+  })
+})
+
+shellRemoveBtn.addEventListener('click', () => {
+  void bridge.recallShellRemove?.()?.then(() => {
+    recallShellStatus.textContent = 'profile hooks removed'
+    void refreshRecallStatus()
+  })
+})
+
+const BROWSER_HINTS: Record<string, string> = {
+  off: 'Off: only window titles of browser windows are recorded (via app focus).',
+  extension:
+    'Guided extension: press "Prepare extension folder" below, then in Chrome open chrome://extensions → enable Developer mode → "Load unpacked" → pick that folder → click the bloub-link icon and Connect. You can also browse or download the extension source via the GitHub link.',
+  cdp: 'Supervised relaunch: Chrome is restarted with a local debugging port and Bloub captures your outbound submits directly. Close all Chrome windows first, otherwise Chrome ignores the port.'
+}
+function syncBrowserHint(mode: string) {
+  const el = document.getElementById('recall-browser-hint')
+  if (el) el.textContent = BROWSER_HINTS[mode] ?? BROWSER_HINTS.off!
+  // Extension-Zeile nur im Guided-Extension-Modus zeigen
+  const row = document.getElementById('recall-extension-row')
+  if (row) row.style.display = mode === 'extension' ? '' : 'none'
+}
+
+const extBtn = document.getElementById('recall-ext-btn') as HTMLButtonElement
+extBtn?.addEventListener('click', () => {
+  const statusEl = document.getElementById('recall-ext-status')
+  if (statusEl) statusEl.textContent = 'copying…'
+  void bridge.recallExtensionFolder?.()?.then((res) => {
+    if (!statusEl) return
+    if (res.ok) {
+      statusEl.textContent =
+        `✓ ${res.folder}` + (res.port ? ` · listening on port ${res.port}` : ' · enable the toggle first')
+    } else {
+      statusEl.textContent = `✗ ${res.error}`
+    }
+  })
+})
+
+/** Quelle der Extension im Repo — auch ohne laufende App einsehbar. */
+const BLOUB_LINK_GITHUB_URL = 'https://github.com/Mailo037/bloub/tree/main/app/vendor/bloub-link'
+document.getElementById('recall-ext-github-btn')?.addEventListener('click', () => {
+  void bridge.openExternal?.(BLOUB_LINK_GITHUB_URL)
+})
+
+const retentionInput = document.getElementById('recall-retention') as HTMLInputElement
+retentionInput.addEventListener('change', () => {
+  const days = Math.min(365, Math.max(1, Math.round(Number(retentionInput.value) || 14)))
+  retentionInput.value = String(days)
+  void bridge.recallSetConfig?.({ retentionDays: days })
+})
+
+const storageLine = document.getElementById('recall-storage-line')!
+
+document.getElementById('recall-index-now-btn')?.addEventListener('click', () => {
+  void bridge.recallIndexNow?.()?.then((r) => {
+    storageLine.textContent = `indexing… ${r.indexed} new events folded in`
+    setTimeout(() => void refreshRecallStatus(), 800)
+  })
+})
+
+document.getElementById('recall-purge-btn')?.addEventListener('click', () => {
+  void confirmDialog({
+    title: 'Purge everything?',
+    message: 'Deletes ALL recorded activity: raw events, spool files and search index. This cannot be undone.',
+    okLabel: 'Purge',
+    danger: true
+  }).then((ok) => {
+    if (!ok) return
+    void bridge.recallPurge?.()?.then(({ freed }) => {
+      storageLine.textContent = `purged (~${Math.max(1, Math.round(freed / 1024))} KB freed)`
+      void refreshRecallStatus()
+    })
+  })
+})
+
+let lastRecallStatus: RecallStatus | null = null
+
+async function refreshRecallStatus() {
+  const st = await bridge.recallGetStatus?.()
+  if (!st) return
+  lastRecallStatus = st
+  // Pause-Anzeige spiegelt den Tray-Zustand
+  if (!st.enabled) {
+    recallPauseIndicator.textContent = 'Recording off'
+    recallPauseBtn.disabled = true
+  } else if (st.autoPaused) {
+    recallPauseIndicator.textContent = 'Auto-paused (sensitive window)'
+    recallPauseBtn.disabled = true
+  } else if (st.manualPaused) {
+    recallPauseIndicator.textContent = 'Paused'
+    recallPauseBtn.disabled = false
+    recallPauseBtn.textContent = 'Resume'
+  } else {
+    recallPauseIndicator.textContent = 'Recording'
+    recallPauseBtn.disabled = false
+    recallPauseBtn.textContent = 'Pause now'
+  }
+  // Shell-Hook-Status
+  const hooks = st.shellHooks ?? []
+  const installed = hooks.filter((h) => h.installed).length
+  recallShellStatus.textContent =
+    hooks.length === 0
+      ? 'no PowerShell profiles found'
+      : `${installed}/${hooks.length} profiles hooked`
+  // Storage
+  const bytes = st.storage?.bytes ?? 0
+  const lines = st.storage?.lines ?? 0
+  storageLine.textContent = `${lines.toLocaleString()} events · ${(bytes / 1024).toFixed(0)} KB on disk`
+}
+
+/** Felder aus der frischen Config befuellen (ohne Fokus-Override). */
+function syncRecallFields() {
+  const r = config.recall
+  if (!r) return
+  recallMasterSwitch.setValue(!!r.enabled)
+  recallShellSwitch.setValue(r.shell !== false)
+  recallClipboardSwitch.setValue(!!r.clipboard)
+  recallBrowserSeg.setValue(r.browserLink ?? 'off')
+  syncBrowserHint(r.browserLink ?? 'off')
+  if (document.activeElement !== retentionInput) retentionInput.value = String(r.retentionDays ?? 14)
+  void refreshRecallStatus()
+}
 
 /* ---- Resize: Ziehen an Kanten und Ecken ---- */
 

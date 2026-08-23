@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: system-ui, sans-serif; width: 260px; margin: 0; padding: 14px; background: #1b1d23; color: #e8e8ee; }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    p { font-size: 12px; line-height: 1.5; margin: 8px 0; opacity: .85; }
+    label { font-size: 11px; opacity: .7; display: block; margin-top: 8px; }
+    input { width: 100%; box-sizing: border-box; background: #2a2d36; color: inherit; border: 1px solid #3a3e4a; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+    button { width: 100%; margin-top: 10px; padding: 8px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    #connect { background: #5b8cff; color: white; }
+    #disconnect { background: #3a3e4a; color: #e8e8ee; }
+    #status { font-size: 12px; margin-top: 10px; }
+    code { background: #2a2d36; padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>🔗 bloub-link</h1>
+  <p>Sends YOUR form submissions to the local Bloub app only. Passwords &amp; payment fields are never captured.</p>
+  <label for="port">Port (only change if Bloub says so)</label>
+  <input id="port" type="text" inputmode="numeric" />
+  <button id="connect" type="button">Connect</button>
+  <button id="disconnect" type="button">Disconnect</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

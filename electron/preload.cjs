@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('bloubPet', {
   onChatVisibility: (cb) => ipcRenderer.on('ui:chat-visibility', (_e, visible) => cb(visible)),
   onCustomAnim: (cb) => ipcRenderer.on('pet:custom-anim', (_e, spec) => cb(spec)),
   notifyCustomAnimDone: (id) => ipcRenderer.send('pet:custom-anim-done', id),
+  // globaler Cursor ueber alle Monitore (Main pollt screen.getCursorScreenPoint)
+  onGlobalCursor: (cb) => ipcRenderer.on('pet:global-cursor', (_e, p) => cb(p)),
   pathForFile: (file) => {
     const { webUtils } = require('electron')
     return webUtils.getPathForFile(file)
@@ -42,6 +44,15 @@ contextBridge.exposeInMainWorld('bloubPet', {
   testHotkey: (combo) => ipcRenderer.invoke('hotkey:test', combo),
   setGrantSecrets: (path, allowSecrets) => ipcRenderer.invoke('grants:set-secrets', path, allowSecrets),
   removeGrant: (path) => ipcRenderer.invoke('grants:remove', path),
+  // activity recall
+  recallGetStatus: () => ipcRenderer.invoke('recall:get-status'),
+  recallSetConfig: (partial) => ipcRenderer.invoke('recall:set-config', partial),
+  recallShellInstall: () => ipcRenderer.invoke('recall:shell-install'),
+  recallShellRemove: () => ipcRenderer.invoke('recall:shell-remove'),
+  recallIndexNow: () => ipcRenderer.invoke('recall:index-now'),
+  recallPurge: () => ipcRenderer.invoke('recall:purge'),
+  recallTogglePause: () => ipcRenderer.invoke('recall:toggle-pause'),
+  recallExtensionFolder: () => ipcRenderer.invoke('recall:extension-folder'),
   // about & updates
   getAppSpecs: () => ipcRenderer.invoke('app:get-specs'),
   checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),

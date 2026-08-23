@@ -21,6 +21,7 @@
         <button type="button" data-tab="look" class="on">Look</button>
         <button type="button" data-tab="chat">Chat</button>
         <button type="button" data-tab="pet">Pet</button>
+        <button type="button" data-tab="recall">Recall</button>
         <button type="button" data-tab="about">About</button>
       </nav>
     </header>
@@ -124,6 +125,65 @@
         <section class="well danger-well">
           <h2>Leave</h2>
           <button type="button" id="quit-btn">Quit pet</button>
+        </section>
+      </div>
+
+      <div id="pane-recall" class="pane hidden">
+        <section class="well">
+          <h2>Activity recall</h2>
+          <div id="recall-master-slot" class="toggle-slot"></div>
+          <p class="hint">When enabled, Bloub keeps a local record of what you do on this PC: terminal commands you execute, which apps you focus, and (optionally) web posts you send. Everything stays in this user-data folder — nothing is uploaded and the AI only sees it through bounded search tools. Recording is OFF until you turn it on.</p>
+          <div class="row-between tight">
+            <span id="recall-pause-indicator">Recording</span>
+            <button type="button" id="recall-pause-btn" disabled>Pause now</button>
+          </div>
+          <p class="hint">Hotkey Ctrl+Alt+P pauses/resumes instantly. Recording also auto-pauses while a password or banking window is focused.</p>
+        </section>
+        <section class="well">
+          <h2>Terminal capture</h2>
+          <div id="recall-shell-slot" class="toggle-slot"></div>
+          <p class="hint">Records commands AFTER you run them — never keystrokes while typing. Requires a small hook in your PowerShell profile (installed below).</p>
+          <div class="row-between tight">
+            <span id="recall-shell-status">checking…</span>
+            <span>
+              <button type="button" id="recall-shell-install-btn">Install profile hooks</button>
+              <button type="button" id="recall-shell-remove-btn">Remove</button>
+            </span>
+          </div>
+        </section>
+        <section class="well">
+          <h2>Browser link</h2>
+          <label class="fld">Mode
+            <div id="recall-browser-slot"></div>
+          </label>
+          <p class="hint" id="recall-browser-hint">Off: only window titles of browser windows are recorded (via app focus).</p>
+          <div id="recall-extension-row" class="row-between tight" style="display:none">
+            <span id="recall-ext-status"></span>
+            <span>
+              <button type="button" id="recall-ext-btn">Prepare extension folder</button>
+              <button type="button" id="recall-ext-github-btn">bloub-link on GitHub ↗</button>
+            </span>
+          </div>
+          <p class="hint">Only YOUR outbound actions (form sends, posts) are captured. Passwords and payment fields are never recorded. Incognito tabs are excluded. No extension is ever installed without your clicks inside Chrome's own UI.</p>
+        </section>
+        <section class="well">
+          <h2>Clipboard</h2>
+          <div id="recall-clipboard-slot" class="toggle-slot"></div>
+          <p class="hint">Keep the last 200 text clipboard entries (10 KB each), skipped entirely while a password-manager window has focus. Off by default.</p>
+        </section>
+        <section class="well">
+          <h2>Storage</h2>
+          <p id="recall-storage-line">—</p>
+          <label class="fld">Retention
+            <input type="number" id="recall-retention" min="1" max="365" step="1" />
+          </label>
+          <p class="hint">Events older than this are purged at every indexing pass (hourly).</p>
+          <div class="row-between tight">
+            <span>
+              <button type="button" id="recall-index-now-btn">Index now</button>
+            </span>
+            <button type="button" id="recall-purge-btn">Purge everything</button>
+          </div>
         </section>
       </div>
 

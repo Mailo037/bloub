@@ -13,6 +13,10 @@ const agentMod = require('./chat/agent.cjs')
 const history = require('./chat/history.cjs')
 const toolsMod = require('./chat/tools.cjs')
 const provider = require('./chat/provider.cjs')
+const recallMod = require('./recall/orchestrator.cjs')
+const shellHook = require('./recall/shell-hook.cjs')
+const recallStore = require('./recall/store.cjs')
+const browserLinkMod = require('./recall/browser-link.cjs')
 
 Menu.setApplicationMenu(null)
 
@@ -90,6 +94,8 @@ function loadConfig() {
   // chat-Abschnitt tief verschmelzen, damit neue Schluessel nach Updates da sind
   config.chat = { ...agentMod.chatDefaults(), ...(config.chat ?? {}) }
   if (!Array.isArray(config.chat.grants)) config.chat.grants = []
+  // recall-Abschnitt ebenso (OFF by default — nichts vor Consent)
+  config.recall = { ...recallMod.recallDefaults(), ...(config.recall ?? {}) }
   syncSystemDriveGrant()
   return config
 }
@@ -407,16 +413,23 @@ async function drawPathOnScreen({ points, color }) {
     const ink = color || '#e8483f'
     const pts = points.map((p) => ({
       x: Math.min(Math.max(Math.round(p.x), workArea.x), workArea.x + workArea.width),
-      y: Math.min(Math.max(Math.round(p.y), workArea.y), workArea.y + workArea.height)
+      y: Math.min(Math.max(Math.round(p.y), workArea.y), workArea.y + workArea.height),
+      draw: p.draw !== false // "don't draw": Punkt anfahren, aber Linie auslassen
     }))
     // Bloub-Fenster-Mitte = 310,310 im 620er Fenster
     const CX = 310
     const CY = 310
     let current = { x: winX + CX, y: winY + CY }
-    const segs = []
-    const pushTo = (px, py) => {
-      segs.push(px, py)
-      return drawSetPath(w, `M ${segs[0]} ${segs[1]} L ${segs.slice(2).join(' ')}`, ink)
+    const cmds = []
+    let needMove = true // nach einem "pen up"-Sprung wieder mit M statt L weitermachen
+    const pushTo = (px, py, draw) => {
+      if (draw) {
+        cmds.push(`${needMove ? 'M' : 'L'} ${px} ${py}`)
+        needMove = false
+        return drawSetPath(w, cmds.join(' '), ink)
+      }
+      needMove = true
+      return Promise.resolve()
     }
 
     for (const target of pts) {
@@ -439,7 +452,7 @@ async function drawPathOnScreen({ points, color }) {
         }
         config.x = nx
         config.y = ny
-        await pushTo(px, py)
+        await pushTo(px, py, target.draw)
         await sleep(16)
       }
       current = { x: target.x, y: target.y }
@@ -805,6 +818,8 @@ function registerHotkeys() {
   } else {
     activeHotkey = null
   }
+  // Recall-Pause-Hotkey (Default Ctrl+Alt+P): friert Aufnahme sofort ein.
+  globalShortcut.register('Ctrl+Alt+P', () => toggleRecallPause())
 }
 
 /* ------------------------------------------------------ api-key store */
@@ -920,6 +935,90 @@ ipcMain.handle('grants:remove', (_e, grantPath) => {
 })
 
 
+/* --------------------------------------------------------- recall ipc */
+
+function recallSpoolDir() {
+  return path.join(app.getPath('userData'), 'recall-spool')
+}
+
+/** Pet spielt einen kleinen One-Shot, wenn Recall-Schalter sich aendern. */
+function notifyRecallChanged() {
+  if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'notify', 2)
+  broadcastConfig()
+  refreshTray()
+}
+
+ipcMain.handle('recall:get-status', () => ({
+  config: config.recall,
+  ...recallMod.pauseStatus(),
+  shellHooks: shellHook.psStatus(),
+  storage: recallStore.storeStats(app.getPath('userData'))
+}))
+
+ipcMain.handle('recall:set-config', (_e, partial) => {
+  const p = partial && typeof partial === 'object' ? partial : {}
+  config.recall = { ...config.recall, ...p }
+  // Master OFF -> auch Pause-Zustaende aufraeumen
+  if (!config.recall.enabled) recallMod.setManualPaused(false)
+  saveConfig()
+  recallMod.refreshProducers()
+  notifyRecallChanged()
+  return { config: config.recall, ...recallMod.pauseStatus() }
+})
+
+ipcMain.handle('recall:shell-install', () => {
+  const results = shellHook.psInstall(recallSpoolDir())
+  broadcastConfig()
+  return results
+})
+
+ipcMain.handle('recall:shell-remove', () => {
+  const results = shellHook.psRemove()
+  broadcastConfig()
+  return results
+})
+
+ipcMain.handle('recall:index-now', () => recallMod.runIndex())
+
+ipcMain.handle('recall:purge', () => {
+  const freed = recallStore.purgeEverything(app.getPath('userData'))
+  // Index/State neu anlegen (leer), Engine verwerfen
+  if (recallMod.isStarted()) {
+    recallMod.runIndex()
+    recallMod.getEngine()?.invalidate()
+  }
+  notifyRecallChanged()
+  return { freed }
+})
+
+function toggleRecallPause() {
+  if (!config.recall?.enabled) return null
+  recallMod.setManualPaused(!recallMod.isManuallyPaused())
+  notifyRecallChanged()
+  return recallMod.pauseStatus()
+}
+
+ipcMain.handle('recall:toggle-pause', () => toggleRecallPause())
+
+/**
+ * Kopiert die bloub-link Extension nach <userData>/recall/bloub-link —
+ * ein stabiler Pfad, den der User in chrome://extensions per "Load unpacked"
+ * waehlt. Bewusst KEINE Registry-Eintraege und KEIN --load-extension:
+ * die Installation geschieht ausschliesslich durch User-Klicks in Chrome.
+ */
+ipcMain.handle('recall:extension-folder', () => {
+  const src = path.join(__dirname, '..', 'vendor', 'bloub-link')
+  const dest = path.join(app.getPath('userData'), 'recall', 'bloub-link')
+  try {
+    fs.rmSync(dest, { recursive: true, force: true })
+    fs.cpSync(src, dest, { recursive: true })
+  } catch (err) {
+    return { ok: false, error: String(err?.message ?? err) }
+  }
+  return { ok: true, folder: dest, port: browserLinkMod.getLinkInfo()?.port ?? null }
+})
+
+
 /* ------------------------------------------------------------- helpers */
 
 function workAreaRight() {
@@ -962,6 +1061,69 @@ ipcMain.on('pet:setIgnore', (_e, ignore) => {
   if (!win) return
   win.setIgnoreMouseEvents(!!ignore, { forward: true })
 })
+
+/* --------------------------------------- globaler Cursor-Follow (Multi-Monitor) */
+
+/**
+ * Der Renderer sieht DOM-pointermove nur, wenn der Cursor ueber dem eigenen
+ * 620x620-Fenster schwebt. Damit der Bloub dem Cursor ueber den GESAMTEN
+ * virtuellen Desktop (alle Monitore) folgen kann, pollt der Main-Prozess
+ * screen.getCursorScreenPoint() und funkt die Position per IPC ins Pet-Fenster.
+ * Die Koordinaten werden doppelt geliefert: fensterrelativ (kann ausserhalb
+ * 0..620 liegen) und global — plus der stabilen 1-basierten Monitor-Nummer
+ * fuer das kleine ID-Tag im Renderer.
+ */
+
+let cursorPollTimer = null
+let lastCursorKey = ''
+
+/** Stabile 1-basierte Monitor-Nummer (links nach rechts, dann oben nach unten). */
+function displayIndexFor(displayId) {
+  const sorted = [...screen.getAllDisplays()].sort(
+    (a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y
+  )
+  const idx = sorted.findIndex((d) => d.displayId === displayId)
+  return idx === -1 ? 1 : idx + 1
+}
+
+function startCursorPolling() {
+  if (cursorPollTimer) return
+  cursorPollTimer = setInterval(() => {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+    try {
+      const pt = screen.getCursorScreenPoint()
+      const bounds = win.getContentBounds()
+      // Nur senden, wenn sich wirklich etwas bewegt hat (IPC-Spam vermeiden)
+      const key = `${pt.x}:${pt.y}:${bounds.x}:${bounds.y}`
+      if (key === lastCursorKey) return
+      lastCursorKey = key
+      const disp = screen.getDisplayNearestPoint(pt)
+      win.webContents.send('pet:global-cursor', {
+        // Position relativ zum Pet-Fenster (auch ausserhalb des Fensters)
+        x: pt.x - bounds.x,
+        y: pt.y - bounds.y,
+        // Globale Koordinaten auf dem virtuellen Desktop
+        gx: pt.x,
+        gy: pt.y,
+        // Ursprung des Pet-Fensters in globalen Koordinaten
+        wx: bounds.x,
+        wy: bounds.y,
+        // Monitor-Kennung fuer das kleine ID-Tag
+        display: disp ? displayIndexFor(disp.displayId) : 1,
+        displayCount: screen.getAllDisplays().length
+      })
+    } catch {
+      /* best effort */
+    }
+  }, 16)
+}
+
+function stopCursorPolling() {
+  if (cursorPollTimer) {
+    clearInterval(cursorPollTimer)
+    cursorPollTimer = null
+  }
+}
 
 ipcMain.on('ui:toggle-settings', () => {
   if (settingsWin && !settingsWin.isDestroyed()) closeSettings()
@@ -1457,6 +1619,7 @@ let isQuitting = false
 function requestQuit() {
   if (isQuitting) return
   isQuitting = true
+  stopCursorPolling()
   // Laufende Agent-Arbeit sauber beenden: Provider-Stream + Tool-Calls abbrechen
   if (chat) chat.abort()
   // Custom-Animation-Waiter freigeben, damit kein Promise haengen bleibt
@@ -1487,18 +1650,20 @@ app.on('before-quit', (e) => {
   }
 })
 
-function createTray() {
-  const icon = nativeImage.createFromBuffer(
-    Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAEKADAAQAAAABAAAAEAAAAAA0YuksAAAAUUlEQVQ4y2NgGAWjYBSMgoEBjIwM/xmoYAYGBgYmEvw/CvD/jQz/mZCJEQwXAPFjUcz4j8bHqRg0gIk0w4FmMBEaHjCqgFEwGgWjYBSQCQAAM7wK0qP75/YAAAAASUVORK5CYII=',
-      'base64'
-    )
-  )
-  tray = new Tray(icon)
-  tray.setToolTip('Bloub Pet')
-  const contextMenu = Menu.buildFromTemplate([
+function buildTrayMenu() {
+  const recallOn = !!config.recall?.enabled
+  return Menu.buildFromTemplate([
     {
-      label: 'Show & Center Pet',
+      label: 'Show Pet',
+      click: () => {
+        if (win && !win.isDestroyed()) {
+          win.show()
+          win.moveTop()
+        }
+      }
+    },
+    {
+      label: 'Center Pet',
       click: () => {
         if (win && !win.isDestroyed()) {
           const { workArea } = screen.getPrimaryDisplay()
@@ -1514,8 +1679,23 @@ function createTray() {
       }
     },
     {
-      label: 'Settings',
+      label: 'Settings…',
       click: () => showSettings()
+    },
+    { type: 'separator' },
+    {
+      // Pause-Switch: friert SOFORT jede Aufnahme ein (Producer pruefen
+      // isActive() vor jedem Schreibvorgang).
+      label: 'Pause recall',
+      type: 'checkbox',
+      checked: recallMod.isManuallyPaused(),
+      enabled: recallOn,
+      click: () => toggleRecallPause()
+    },
+    {
+      label: 'Recall: index now',
+      enabled: recallOn,
+      click: () => recallMod.runIndex()
     },
     { type: 'separator' },
     {
@@ -1523,7 +1703,20 @@ function createTray() {
       click: () => requestQuit()
     }
   ])
-  tray.setContextMenu(contextMenu)
+}
+
+/** Tray-Menue neu aufbauen (nach Pause-Wechsel etc.). */
+function refreshTray() {
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu())
+}
+
+function createTray() {
+  // Echtes Bloub-Icon (Multi-Size-.ico, prozedural generiert via tools/make-icon.mjs)
+  const iconPath = path.join(__dirname, 'assets', 'bloub.ico')
+  const icon = nativeImage.createFromPath(iconPath)
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  tray.setToolTip('Bloub Pet')
+  tray.setContextMenu(buildTrayMenu())
   tray.on('click', () => {
     if (win && !win.isDestroyed()) {
       win.show()
@@ -1537,14 +1730,20 @@ function createTray() {
 app.whenReady().then(() => {
   loadConfig()
   createWindow()
+  startCursorPolling()
   createTray()
   registerHotkeys()
   scheduleAutoPilot()
+  // Recall-Orchestrator: Producer laufen NUR wenn config.recall.enabled —
+  // der Start selbst ist inert und schreibt nichts.
+  recallMod.startRecall({ userData: app.getPath('userData'), getCfg: () => config })
 })
 
 app.on('will-quit', () => {
+  stopCursorPolling()
   globalShortcut.unregisterAll()
   history.close(app.getPath('userData'))
+  recallMod.stopRecall()
 })
 
 app.on('window-all-closed', () => app.quit())

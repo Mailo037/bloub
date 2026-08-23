@@ -80,6 +80,19 @@ export interface ChatConfig {
   memoryEnabled: boolean
   /** Voller Zugriff auf das Systemlaufwerk (C:\) — Pad-Settings Opt-in. */
   fullDriveAccess: boolean
+  /* ---- Actions: was die AI mit ihren Pet-Tools tun darf ---- */
+  /** Expressions aendern (pet_set_expression). */
+  expressionAccess: boolean
+  /** Animationen abspielen (pet_animate / pet_stop_animation / pet_custom_animate). */
+  animationAccess: boolean
+  /** Aussehen aendern (pet_set_shape / pet_set_color / pet_set_size). */
+  appearanceAccess: boolean
+  /** Zeichnen auf dem Desktop (pet_draw_path). */
+  drawAccess: boolean
+  /** Max. Tool-Calls pro Turn (alle Tools zusammen). */
+  maxToolCallsPerTurn: number
+  /** Max. pet_draw_path-Calls pro Turn. */
+  maxDrawCallsPerTurn: number
   /** Autopilot: 'off' | 'silent' | 'visible' — periodische Selbst-Check-ins der AI. */
   autoPilot: string
   /** Autopilot-Intervall in Sekunden. */
@@ -97,6 +110,54 @@ export type PetConfigShape = {
   ballSize: number
   eventsEnabled: boolean
   chat?: Partial<ChatConfig>
+  recall?: Partial<RecallConfig>
+}
+
+/**
+ * Globale Cursor-Position vom Main-Prozess (pollt screen.getCursorScreenPoint).
+ * Gilt auf dem gesamten virtuellen Desktop — also ueber ALLE Monitore hinweg.
+ */
+export interface GlobalCursorInfo {
+  /** Position relativ zum Pet-Fenster (kann auch ausserhalb 0..620 liegen). */
+  x: number
+  y: number
+  /** Globale Koordinaten auf dem virtuellen Desktop. */
+  gx: number
+  gy: number
+  /** Ursprung des Pet-Fensters in globalen Koordinaten. */
+  wx: number
+  wy: number
+  /** Stabile 1-basierte Monitor-Nummer unter dem Cursor (links -> rechts). */
+  display: number
+  /** Anzahl aktiver Monitore. */
+  displayCount: number
+}
+
+/** Activity Recall (Opt-in, default AUS): was wird lokal aufgezeichnet. */
+export interface RecallConfig {
+  /** Master-Switch: nichts wird aufgezeichnet, bevor der User zusagt. */
+  enabled: boolean
+  /** Terminal-Befehle aufzeichnen (Shell-Hooks + Spool). */
+  shell: boolean
+  /** Clipboard-Tap (zusaetzlich opt-in, default aus). */
+  clipboard: boolean
+  /** Browser-Link: 'off' | 'extension' | 'cdp'. */
+  browserLink: string
+  /** Aufbewahrung in Tagen. */
+  retentionDays: number
+}
+
+/** Status-Meldung des Recall-Orchestrators fuer die Settings. */
+export interface RecallStatus {
+  active: boolean
+  manualPaused: boolean
+  autoPaused: boolean
+  enabled: boolean
+  browserLinkPort?: number | null
+  clipboardRunning?: boolean
+  cdpAttached?: boolean
+  shellHooks?: { file: string; installed: boolean }[]
+  storage?: { bytes: number; lines: number; oldestTs?: number | null; newestTs?: number | null }
 }
 
 /** Attachment-Chip wie er vom Main an chatWin gemeldet wird. */
@@ -202,6 +263,8 @@ export interface PetBridge {
   onCustomAnim?(cb: (spec: CustomAnimSpec) => void): void
   /** Pet meldet Abschluss einer Custom-Animation (beide Tracks fertig). */
   notifyCustomAnimDone?(id: string): void
+  /** Globaler Cursor (alle Monitore), vom Main-Prozess gepollt. */
+  onGlobalCursor?(cb: (p: GlobalCursorInfo) => void): void
   /* chat window */
   sendChat?(payload: { text: string; attachmentIds: string[] }): Promise<boolean>
   /** Chat-Dock IMMER oeffnen (Kontextmenue "Open input") — togglet nie. */
@@ -217,6 +280,15 @@ export interface PetBridge {
   testHotkey?(combo: string): Promise<{ ok: boolean; activeHotkey: string | null }>
   setGrantSecrets?(path: string, allowSecrets: boolean): Promise<Grant[]>
   removeGrant?(path: string): Promise<Grant[]>
+  /* activity recall */
+  recallGetStatus?(): Promise<RecallStatus & { config: Partial<RecallConfig> }>
+  recallSetConfig?(partial: Partial<RecallConfig>): Promise<{ config: Partial<RecallConfig> } & RecallStatus>
+  recallShellInstall?(): Promise<{ file: string; changed: boolean; error?: string }[]>
+  recallShellRemove?(): Promise<{ file: string; changed: boolean; error?: string }[]>
+  recallIndexNow?(): Promise<{ indexed: number; purgedShards: number; errors?: unknown[] }>
+  recallPurge?(): Promise<{ freed: number }>
+  recallTogglePause?(): Promise<RecallStatus | null>
+  recallExtensionFolder?(): Promise<{ ok: boolean; folder?: string; port?: number | null; error?: string }>
   /* about & updates */
   getAppSpecs?(): Promise<AppSpecs>
   checkForUpdates?(): Promise<UpdateCheckResult>

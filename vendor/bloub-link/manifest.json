@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "bloub-link",
+  "version": "1.0.0",
+  "description": "Records YOUR outbound posts/sends locally for the Bloub desktop pet. No scraping, no keystrokes, no passwords.",
+  "incognito": "split",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "sw.js" },
+  "action": { "default_popup": "popup.html", "default_title": "bloub-link" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1133,19 +1133,24 @@ const PET_DRAW_PATH = defineTool({
   description:
     'Make Bloub walk across the screen and paint a visible line behind him. ' +
     'Provide points as absolute screen coordinates (x, y in pixels). The line is drawn as Bloub moves ' +
-    'from point to point. The result tells you the screen work area for your next call. ' +
-    'Works best with 2-6 points. Use a hex color like "#e8483f" to match Bloub\'s current color.',
+    'from point to point. Set "draw": false on a point to move Bloub there WITHOUT painting the line ' +
+    '(pen up) — use this to jump between separate strokes. The result tells you the screen work area ' +
+    'for your next call. Works best with 2-16 points. Use a hex color like "#e8483f" to match Bloub\'s current color.',
   parameters: {
     type: 'object',
     properties: {
       points: {
         type: 'array',
-        description: 'Array of 2-8 screen-coordinate points Bloub visits in order, drawing a line as he moves.',
+        description: 'Array of 2-32 screen-coordinate points Bloub visits in order, drawing a line as he moves.',
         items: {
           type: 'object',
           properties: {
             x: { type: 'number', description: 'Screen X coordinate in pixels.' },
-            y: { type: 'number', description: 'Screen Y coordinate in pixels.' }
+            y: { type: 'number', description: 'Screen Y coordinate in pixels.' },
+            draw: {
+              type: 'boolean',
+              description: 'Optional. Set false to move to this point without painting the line leading to it ("don\'t draw" / pen up). Defaults to true.'
+            }
           },
           required: ['x', 'y'],
           additionalProperties: false
@@ -1161,8 +1166,8 @@ const PET_DRAW_PATH = defineTool({
     if (!Array.isArray(args.points) || args.points.length < 2) {
       return { ok: false, content: 'need at least 2 points', isError: true }
     }
-    if (args.points.length > 8) {
-      return { ok: false, content: 'maximum 8 points supported', isError: true }
+    if (args.points.length > 32) {
+      return { ok: false, content: 'maximum 32 points supported', isError: true }
     }
     if (typeof ctx?.onDrawPath !== 'function') {
       return { ok: false, content: 'draw path unavailable', isError: true }
@@ -1191,15 +1196,47 @@ const FS_WRITE_TOOLS = [FS_WRITE, FS_EDIT]
 const FS_TOOLS = [...FS_READ_TOOLS, ...FS_WRITE_TOOLS]
 const ALL_TOOLS = [...PET_TOOLS, ...SYS_TOOLS, ...MEMORY_TOOLS, ...FS_TOOLS]
 
+// Recall-Tools kommen aus dem eigenen Modul (kein Zirkelbezug: die pruefen
+// ihren Aktiv-Zustand selbst ueber den Orchestrator und antworten mit
+// isError "activity recall is disabled", wenn aus/pausiert).
+try {
+  ALL_TOOLS.push(...require('../recall/tools.cjs').RECALL_TOOLS)
+} catch {
+  /* Recall-Modul fehlt/fehlerhaft — Chat laeuft ohne weiter */
+}
+
 /**
- * Model-Sicht der Tools. Pet-Tools sind immer verfuegbar; FS-Tools nur mit
+ * Pet-Tool je Actions-Kategorie (Settings "Actions"). pet_get_state ist immer
+ * erlaubt — nur Lesen. Werte sind die Keys in ctx.actions / opts.actions.
+ */
+const ACTION_OF_PET_TOOL = new Map([
+  [PET_SET_EXPRESSION.name, 'expression'],
+  [PET_ANIMATE.name, 'animation'],
+  [PET_STOP_ANIMATION.name, 'animation'],
+  [PET_CUSTOM_ANIMATE.name, 'animation'],
+  [PET_SET_SHAPE.name, 'appearance'],
+  [PET_SET_COLOR.name, 'appearance'],
+  [PET_SET_SIZE.name, 'appearance'],
+  [PET_DRAW_PATH.name, 'draw']
+])
+
+/** Actions-Flags einer Kategorie abfragen (default: erlaubt). */
+function actionAllowed(actions, category) {
+  return !actions || actions[category] !== false
+}
+
+/**
+ * Model-Sicht der Tools. Pet-Tools nur in den vom User freigegebenen
+ * Actions-Kategorien (pet_get_state bleibt immer); FS-Tools nur mit
  * Grants UND passender globaler Dateizugriffs-Stufe (fileAccess):
  * none -> gar keine FS-Tools, read -> nur lesen, readwrite -> lesen + schreiben.
  * System-Tools (info/app/media/screenshot) sind immer verfuegbar; shell_exec nur,
  * wenn der User Terminal-Zugriff aktiviert hat; Memory-Tools nur bei memoryEnabled.
  */
 function TOOLS_FOR_MODEL(grants, fileAccess = 'read', opts = {}) {
-  const tools = [...PET_TOOLS, ...SYS_TOOLS.filter((t) => t.name !== 'shell_exec')]
+  const acts = opts.actions || {}
+  const petTools = PET_TOOLS.filter((t) => actionAllowed(acts, ACTION_OF_PET_TOOL.get(t.name)))
+  const tools = [...petTools, ...SYS_TOOLS.filter((t) => t.name !== 'shell_exec')]
   if (opts.shellEnabled) tools.push(SHELL_EXEC)
   if (opts.memoryEnabled) tools.push(...MEMORY_TOOLS)
   if (grants && grants.length > 0 && fileAccess !== 'none') {
@@ -1208,6 +1245,8 @@ function TOOLS_FOR_MODEL(grants, fileAccess = 'read', opts = {}) {
       tools.push(...FS_WRITE_TOOLS)
     }
   }
+  // Recall-Tools nur anbieten, wenn der User Activity Recall aktiviert hat
+  if (opts.recallEnabled) tools.push(...RECALL_TOOLS)
   return tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }))
 }
 
@@ -1215,6 +1254,13 @@ function TOOLS_FOR_MODEL(grants, fileAccess = 'read', opts = {}) {
 async function executeTool(name, argsJson, grantsOrCtx) {
   const tool = ALL_TOOLS.find((t) => t.name === name)
   if (!tool) return { ok: false, content: `unknown tool: ${name}`, isError: true }
+  // Actions-Politik: gesperrte Pet-Tools werden nicht ausgefuehrt — auch dann
+  // nicht, wenn das Modell sie trotzdem callt (z. B. halluziniert).
+  const ctxEarly = Array.isArray(grantsOrCtx) ? {} : (grantsOrCtx || {})
+  const category = ACTION_OF_PET_TOOL.get(name)
+  if (category && !actionAllowed(ctxEarly.actions, category)) {
+    return { ok: false, content: `"${name}" is disabled by the user's action settings`, isError: true }
+  }
   let args
   try {
     args = JSON.parse(argsJson || '{}')
