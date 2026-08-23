@@ -377,7 +377,8 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
 
     const cfgChat = getCfg().chat
     // Budgets gelten pro Turn ueber alle Hops hinweg
-    const budgetState = { callsLeft: budgetsFromCfg(cfgChat).maxToolCalls, drawsLeft: budgetsFromCfg(cfgChat).maxDrawCalls }
+    const startBudget = budgetsFromCfg(cfgChat)
+    const budgetState = { callsLeft: startBudget.maxToolCalls, drawsLeft: startBudget.maxDrawCalls }
     const userRecord = { role: 'user', parts: userParts }
     history.appendRecord(userData, userRecord)
 

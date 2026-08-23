@@ -109,6 +109,10 @@ export type PetConfigShape = {
   expression: string
   ballSize: number
   eventsEnabled: boolean
+  /** Screenshots aller Monitore zu EINEM Bild zusammenfuegen (mit ID-Badges). */
+  screenshotAllDisplays?: boolean
+  /** Globaler Cursor-Follow ueber alle Monitore (Blick + ID-Tag). */
+  globalCursorTracking?: boolean
   chat?: Partial<ChatConfig>
   recall?: Partial<RecallConfig>
 }

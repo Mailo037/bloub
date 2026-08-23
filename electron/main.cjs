@@ -8,6 +8,16 @@ const { execFile, spawn } = require('node:child_process')
 
 app.setName('bloub-pet')
 
+// Windows: Prozess/AppUserModel mit dem Bloub-Icon verknuepfen (Taskbar/Alt-Tab).
+// Muss vor app.whenReady() gesetzt werden; exe-Icon liefert electron-builder.
+app.setAppUserModelId('com.bloub.pet')
+
+// Gemeinsames Fenster-Icon (Multi-Size-.ico aus tools/make-icon.mjs).
+const APP_ICON_PATH = path.join(__dirname, 'assets', 'bloub.ico')
+function windowIcon() {
+  return nativeImage.createFromPath(APP_ICON_PATH)
+}
+
 // Chat-Komponenten (eigene Schicht, keine Abhaengigkeiten)
 const agentMod = require('./chat/agent.cjs')
 const history = require('./chat/history.cjs')
@@ -84,7 +94,9 @@ function loadConfig() {
     color: 'encre',
     expression: 'neutre',
     ballSize: 200,
-    eventsEnabled: true
+    eventsEnabled: true,
+    screenshotAllDisplays: true,
+    globalCursorTracking: true
   }
   try {
     config = { ...fallback, ...JSON.parse(fs.readFileSync(configPath(), 'utf8')) }
@@ -206,6 +218,7 @@ function createWindow() {
       focusable: true,
       title: '',
       show: true,
+      icon: windowIcon(),
       webPreferences: {
         preload: rendererPreload(),
         contextIsolation: true,
@@ -281,6 +294,7 @@ function showSettings() {
       // Settings hosten Formularfelder — ohne Fokus kein Tippen moeglich
       focusable: true,
       show: false,
+      icon: windowIcon(),
       webPreferences: {
         preload: rendererPreload(),
         contextIsolation: true,
@@ -473,19 +487,222 @@ async function drawPathOnScreen({ points, color }) {
   }
 }
 
-/** Screenshot des aktiven Bildschirms (oder primären) als Base64-PNG (fuer desktop_screenshot). */
+/* ------------------------------------------------------- screenshots */
+
+/**
+ * 7-Segment-Digit in einen BGRA-Buffer zeichnen. Fuer die kleinen
+ * Monitor-ID-Badges auf dem kombinierten Screenshot ("kleine ID drueber").
+ */
+const SEG_MAP = {
+  0: [1, 1, 1, 1, 1, 1, 0],
+  1: [0, 1, 1, 0, 0, 0, 0],
+  2: [1, 1, 0, 1, 1, 0, 1],
+  3: [1, 1, 1, 1, 0, 0, 1],
+  4: [0, 1, 1, 0, 0, 1, 1],
+  5: [1, 0, 1, 1, 0, 1, 1],
+  6: [1, 0, 1, 1, 1, 1, 1],
+  7: [1, 1, 1, 0, 0, 0, 0],
+  8: [1, 1, 1, 1, 1, 1, 1],
+  9: [1, 1, 1, 1, 0, 1, 1]
+}
+
+/** Ein Segment als dickes Rechteck in den Buffer malen (BGRA, opaque). */
+function drawSegRect(buf, cw, ch, x, y, w, h, rgb) {
+  const x0 = Math.max(0, Math.round(x))
+  const y0 = Math.max(0, Math.round(y))
+  const x1 = Math.min(cw, Math.round(x + w))
+  const y1 = Math.min(ch, Math.round(y + h))
+  for (let py = y0; py < y1; py++) {
+    let idx = (py * cw + x0) * 4
+    for (let px = x0; px < x1; px++) {
+      buf[idx] = rgb[2] // B
+      buf[idx + 1] = rgb[1] // G
+      buf[idx + 2] = rgb[0] // R
+      buf[idx + 3] = 255 // A
+      idx += 4
+    }
+  }
+}
+
+/** Eine Ziffer (7-Segment) an (x, y) mit Zellenhoehe h zeichnen. */
+function drawDigit(buf, cw, ch, digit, x, y, h, fg) {
+  const segs = SEG_MAP[digit]
+  if (!segs) return
+  const t = Math.max(2, Math.round(h / 5)) // Segmentdicke
+  const w = Math.round(h * 0.56)
+  const g = Math.round(h / 10) // Halbe Luecke an den Ecken
+  // Layout: A oben, B rechts-oben, C rechts-unten, D unten,
+  //         E links-unten, F links-oben, G Mitte
+  if (segs[0]) drawSegRect(buf, cw, ch, x + g, y, w - 2 * g, t, fg)
+  if (segs[1]) drawSegRect(buf, cw, ch, x + w - t, y + g, t, h / 2 - g, fg)
+  if (segs[2]) drawSegRect(buf, cw, ch, x + w - t, y + h / 2, t, h / 2 - g, fg)
+  if (segs[3]) drawSegRect(buf, cw, ch, x + g, y + h - t, w - 2 * g, t, fg)
+  if (segs[4]) drawSegRect(buf, cw, ch, x, y + h / 2, t, h / 2 - g, fg)
+  if (segs[5]) drawSegRect(buf, cw, ch, x, y + g, t, h / 2 - g, fg)
+  if (segs[6]) drawSegRect(buf, cw, ch, x + g, y + h / 2 - t / 2, w - 2 * g, t, fg)
+}
+
+/** Monitor-ID-Badge (dunkle Box + weisse Ziffern) links oben auf dem Bild. */
+function drawDisplayBadge(buf, cw, ch, num, ox, oy) {
+  const digits = String(num).split('').map((d) => Number(d))
+  const dh = 30 // Ziffernhoehe
+  const dw = Math.round(dh * 0.56)
+  const pad = 7
+  const bw = digits.length * (dw + 6) + 2 * pad
+  const bh = dh + 2 * pad
+  // Hintergrund (dunkel, deckend)
+  drawSegRect(buf, cw, ch, ox, oy, bw, bh, [16, 16, 20])
+  // Dünner heller Rahmen
+  drawSegRect(buf, cw, ch, ox, oy, bw, 2, [232, 230, 224])
+  drawSegRect(buf, cw, ch, ox, oy + bh - 2, bw, 2, [232, 230, 224])
+  drawSegRect(buf, cw, ch, ox, oy, 2, bh, [232, 230, 224])
+  drawSegRect(buf, cw, ch, ox + bw - 2, oy, 2, bh, [232, 230, 224])
+  let dx = ox + pad
+  for (const d of digits) {
+    drawDigit(buf, cw, ch, d, dx, oy + pad, dh, [240, 238, 232])
+    dx += dw + 6
+  }
+}
+
+/** Bounding-Box des gesamten virtuellen Desktops (alle Monitore). */
+function virtualDesktopBounds() {
+  const displays = screen.getAllDisplays()
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const d of displays) {
+    x0 = Math.min(x0, d.bounds.x)
+    y0 = Math.min(y0, d.bounds.y)
+    x1 = Math.max(x1, d.bounds.x + d.bounds.width)
+    y1 = Math.max(y1, d.bounds.y + d.bounds.height)
+  }
+  return { x0, y0, width: x1 - x0, height: y1 - y0 }
+}
+
+/** Stabile 1-basierte Monitor-Nummer (links nach rechts, dann oben nach unten). */
+function displayIndexForId(displayId) {
+  const sorted = [...screen.getAllDisplays()].sort(
+    (a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y
+  )
+  const idx = sorted.findIndex((d) => d.displayId === displayId)
+  return idx === -1 ? 1 : idx + 1
+}
+
+/**
+ * Screenshot fuer desktop_screenshot.
+ *
+ * Mit config.screenshotAllDisplays (default AN): ALLE Monitore werden auf
+ *genommen und entsprechend ihres realen Layouts zu EINEM Bild zusammengefuegt
+ * — jedes Monitor-Rechteck bekommt ein kleines ID-Badge ("kleine ID drueber"),
+ * damit die AI die Screens unterscheiden kann. Aus: nur der Monitor neben dem
+ * Pet-Fenster (altes Verhalten).
+ */
 async function takeScreenshot() {
   try {
+    /* ---- Modus A: alle Monitore, zusammengefuert mit ID-Badges ---- */
+    let stitch = null
+    if (config.screenshotAllDisplays !== false && screen.getAllDisplays().length > 0) {
+      const vb = virtualDesktopBounds()
+      if (vb.width > 0 && vb.height > 0) {
+        // Endbild skalieren: breit genug zum Lesen, klein genug fuer den Chat.
+        // Der gewuenschte Thumbnail-Massstab muss VOR getSources feststehen —
+        // ohne passenden thumbnailSize liefert Electron nur 150x150!
+        const scale = Math.min(1, 2560 / vb.width, 1440 / vb.height)
+        stitch = { vb, scale }
+      }
+    }
+
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 }
+      thumbnailSize: stitch
+        ? {
+            width: Math.max(1, Math.round(stitch.vb.width * stitch.scale)),
+            height: Math.max(1, Math.round(stitch.vb.height * stitch.scale))
+          }
+        : { width: 1920, height: 1080 }
     })
-    const currentDisplay = screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) || screen.getPrimaryDisplay()
-    let matched = sources.find((s) => s.display_id === String(currentDisplay.id))
+    const usable = sources.filter((s) => !s.thumbnail.isEmpty())
+    if (!usable || usable.length === 0) {
+      return { ok: false, error: 'no screen available' }
+    }
+
+    if (stitch && usable.length > 0) {
+      try {
+        const { vb, scale } = stitch
+        const W = Math.max(1, Math.round(vb.width * scale))
+        const H = Math.max(1, Math.round(vb.height * scale))
+        const canvas = Buffer.alloc(W * H * 4)
+
+        const parts = []
+        const claimed = new Set()
+        for (const disp of screen.getAllDisplays()) {
+          // Primär per display_id zuordnen; Fallback: unbeanspruchte Source
+          // mit passendstem Seitenverhaeltnis (display_id kann leer sein).
+          let src = usable.find(
+            (s) => !claimed.has(s.name + s.id) && String(s.display_id) === String(disp.id)
+          )
+          if (!src) {
+            const ar = disp.bounds.width / Math.max(1, disp.bounds.height)
+            src = usable
+              .filter((s) => !claimed.has(s.name + s.id))
+              .sort((a, b) => {
+                const sa = a.thumbnail.getSize()
+                const sb = b.thumbnail.getSize()
+                return (
+                  Math.abs(sa.width / Math.max(1, sa.height) - ar) -
+                  Math.abs(sb.width / Math.max(1, sb.height) - ar)
+                )
+              })[0]
+          }
+          if (!src) continue
+          claimed.add(src.name + src.id)
+          const img = src.thumbnail
+          const { width: iw, height: ih } = img.getSize()
+          const dx = Math.round((disp.bounds.x - vb.x0) * scale)
+          const dy = Math.round((disp.bounds.y - vb.y0) * scale)
+          // Zeilenweise in den Canvas kopieren (an Raender geclippt)
+          const copyW = Math.min(iw, W - dx)
+          const copyH = Math.min(ih, H - dy)
+          const rowBytes = copyW * 4
+          const bmp = img.toBitmap()
+          for (let row = 0; row < copyH; row++) {
+            bmp.copy(canvas, ((dy + row) * W + dx) * 4, row * iw * 4, row * iw * 4 + rowBytes)
+          }
+          const num = displayIndexForId(disp.id)
+          drawDisplayBadge(canvas, W, H, num, dx + 12, dy + 12)
+          parts.push(
+            `Monitor ${num} at (${dx},${dy}) ${copyW}x${copyH}px` +
+              ` (real ${disp.bounds.width}x${disp.bounds.height}, badge "${num}" top-left)`
+          )
+        }
+
+        if (parts.length > 0) {
+          const out = nativeImage.createFromBitmap(canvas, { width: W, height: H })
+          const png = out.toPNG()
+          return {
+            ok: true,
+            mime: 'image/png',
+            data: png.toString('base64'),
+            width: W,
+            height: H,
+            layout: `Combined screenshot of ${parts.length} display(s), stitched by real position: ${parts.join('; ')}.`
+          }
+        }
+      } catch {
+        /* Stitching fehlgeschlagen -> unten auf Einzel-Screen fallen */
+      }
+    }
+
+    /* ---- Modus B (Fallback): nur ein Bildschirm, altes Verhalten ---- */
+    const currentDisplay =
+      screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) ||
+      screen.getPrimaryDisplay()
+    let matched = usable.find((s) => s.display_id === String(currentDisplay.id))
     if (!matched) {
-      matched = sources[0]
-      for (const s of sources) {
-        if (!matched || s.thumbnail.getSize().width > matched.thumbnail.getSize().width) matched = s
+      matched = usable[0]
+      for (const s of usable) {
+        if (s.thumbnail.getSize().width > matched.thumbnail.getSize().width) matched = s
       }
     }
     if (!matched || matched.thumbnail.isEmpty()) {
@@ -1089,6 +1306,9 @@ function displayIndexFor(displayId) {
 function startCursorPolling() {
   if (cursorPollTimer) return
   cursorPollTimer = setInterval(() => {
+    // Opt-in-Gate: bei deaktiviertem Tracking wird einfach nichts gesendet —
+    // der Renderer faellt automatisch auf den DOM-Zeiger zurueck.
+    if (!config || config.globalCursorTracking === false) return
     if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
     try {
       const pt = screen.getCursorScreenPoint()

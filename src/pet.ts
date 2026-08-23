@@ -5,7 +5,7 @@ import { SHAPE_BY_ID, COLOR_BY_ID } from '../vendor/bot/skins'
 import { RAYON, DEMI_VIEWBOX } from '../vendor/bot/repere'
 import { clamp } from '../vendor/bot/math'
 import { YAW_MAX, PITCH_MAX, PITCH, SPIN } from '../vendor/ui/gaze'
-import { getBridge, makeBotSvg, type PetConfig, type CustomAnimSpec, type CustomAnimKeyframe } from './shared'
+import { getBridge, makeBotSvg, type PetConfig, type CustomAnimSpec, type CustomAnimKeyframe, type GlobalCursorInfo } from './shared'
 import { BotEngine } from '../vendor/bot/engine'
 import { mountChat } from './chat'
 
@@ -32,6 +32,14 @@ let dragging = false
 let dragMovedTotal = 0
 let lastDragScreen: { x: number; y: number } | null = null
 let pointer: { x: number; y: number } | null = null
+let pointerAt = 0
+/**
+ * Globaler Cursor (vom Main-Prozess gepollt, gilt auf ALLEN Monitoren).
+ * `at` ist performance.now() des letzten Updates — nur dann zaehlt er als
+ * frisch und darf den DOM-Zeiger (nur eigenes Fenster) als Blickziel ersetzen.
+ */
+let globalCursor: (GlobalCursorInfo & { at: number }) | null = null
+const GLOBAL_CURSOR_FRESH_MS = 800
 let aiming = false
 let hoverT = 0
 let settingsOpen = false
@@ -300,15 +308,59 @@ function ballGeometry(): { cx: number; cy: number; r: number } | null {
   }
 }
 
+/* ------------------------------------------------------- monitor-id tag */
+
+let dispTag: HTMLDivElement | null = null
+
+function ensureDisplayTag(): HTMLDivElement {
+  if (!dispTag) {
+    dispTag = document.createElement('div')
+    dispTag.className = 'display-tag hidden'
+    document.getElementById('stage')!.appendChild(dispTag)
+  }
+  return dispTag
+}
+
+/**
+ * Kleine Monitor-ID ("1/2") direkt am Cursor bzw. — wenn der Cursor auf dem
+ * ANDEREN Monitor ist — geklemmt am Fensterrand in Richtung des Cursors.
+ * So ist immer sichtbar, auf welchem Screen der globale Cursor gerade liegt.
+ */
+function tickDisplayTag(
+  g: (GlobalCursorInfo & { at: number }) | null,
+  show: boolean,
+  lookPt: { x: number; y: number } | null
+) {
+  if (!g || !show || !lookPt) {
+    dispTag?.classList.add('hidden')
+    return
+  }
+  const tag = ensureDisplayTag()
+  tag.textContent = g.displayCount > 1 ? `${g.display}/${g.displayCount}` : String(g.display)
+  const stageRect = document.getElementById('stage')!.getBoundingClientRect()
+  const pad = 12
+  // Am Cursor kleben, aber sicher innerhalb des eigenen Fensters halten:
+  // ist der Cursor auf dem anderen Monitor, wandert das Tag an den Rand.
+  const tx = clamp(lookPt.x - stageRect.left + 16, pad, stageRect.width - pad)
+  const ty = clamp(lookPt.y - stageRect.top - 20, pad, stageRect.height - pad)
+  tag.style.left = `${tx}px`
+  tag.style.top = `${ty}px`
+  tag.classList.remove('hidden')
+}
+
 function tickGaze(dt: number) {
   // Waehrend einer Custom-Expression-Animation steuert die Animation das
   // Gesicht — der Cursor-Suchlauf darf nicht dazwischenfunken.
-  if (isExpressionCustomAnim()) return
+  if (isExpressionCustomAnim()) {
+    tickDisplayTag(null, false, null)
+    return
+  }
 
   const geo = ballGeometry()
   const def = STATE_BY_ID.get(engine.state)
 
   if (dragging) {
+    tickDisplayTag(null, false, null)
     // Schnelle Ansprache bei Drag
     const blendRate = 1 - Math.exp(-dt * 24)
     smoothDragVx += (dragVx - smoothDragVx) * blendRate
@@ -344,6 +396,7 @@ function tickGaze(dt: number) {
 
   // Wenn Drag gerade beendet wurde: Traegheit geschmeidig abbauen
   if (dragInertiaT > 0.001) {
+    tickDisplayTag(null, false, null)
     smoothDragVx *= Math.exp(-dt * 16)
     smoothDragVy *= Math.exp(-dt * 16)
     dragInertiaT = clamp(dragInertiaT - dt / 0.25)
@@ -368,18 +421,30 @@ function tickGaze(dt: number) {
     return
   }
 
-  // Normales Blick-Tracking auf Cursor (mit Grace-Period nach Drag)
+  // Normales Blick-Tracking auf Cursor (mit Grace-Period nach Drag).
+  // Blickziel: bevorzugt der GLOBALE Cursor (vom Main gepollt, gilt auf allen
+  // Monitoren — Koordinaten fensterrelativ, also auch <0 oder >620). Nur wenn
+  // der globaler Cursor nicht frisch ist, faellt er auf den DOM-Zeiger
+  // zurueck, der ausschliesslich das eigene Fenster sieht.
   const inGracePeriod = clock < dragGraceUntil
-  const pointerIsRecent = performance.now() - lastPointerMoveTime < 3500
-  const canAim = !dragging && !inGracePeriod && !!geo && !!pointer && (def?.baseFace ?? false)
+  const nowMs = performance.now()
+  const gFresh = globalCursor && nowMs - globalCursor.at < GLOBAL_CURSOR_FRESH_MS ? globalCursor : null
+  const lookPt = gFresh ?? pointer
+  const pointerIsRecent =
+    nowMs - Math.max(lastPointerMoveTime, gFresh?.at ?? 0) < 3500
+  const canAim = !dragging && !inGracePeriod && !!geo && !!lookPt && (def?.baseFace ?? false)
   let active = false
   let nx = 0
   let ny = 0
-  if (canAim && geo && pointer) {
-    nx = clamp((pointer.x - geo.cx) / Math.max(1, window.innerWidth / 2), -1, 1)
-    ny = clamp((pointer.y - geo.cy) / Math.max(1, window.innerHeight / 2), -1, 1)
-    const dist = Math.hypot(pointer.x - geo.cx, pointer.y - geo.cy)
-    active = (dist <= Math.max(geo.r * 4.5, 340) && pointerIsRecent) || settingsOpen
+  if (canAim && geo && lookPt) {
+    nx = clamp((lookPt.x - geo.cx) / Math.max(1, window.innerWidth / 2), -1, 1)
+    ny = clamp((lookPt.y - geo.cy) / Math.max(1, window.innerHeight / 2), -1, 1)
+    const dist = Math.hypot(lookPt.x - geo.cx, lookPt.y - geo.cy)
+    // Mit globalem Cursor ist die Aufmerksamkeits-Reichweite der ganze
+    // virtuelle Desktop (beide Screens "zusammengefuert"); ohne ihn (alter
+    // Fallback) gilt wie bisher die enge Radius-Regel des eigenen Fensters.
+    const nearEnough = gFresh ? true : dist <= Math.max(geo.r * 4.5, 340)
+    active = (nearEnough && pointerIsRecent) || settingsOpen
   }
 
   hoverT = clamp(hoverT + (active ? dt / 0.5 : -dt / 0.9))
@@ -387,6 +452,8 @@ function tickGaze(dt: number) {
   if (active || dragging || settingsOpen || isAiThinking || isAiStreaming) {
     lastActivityAt = clock
   }
+
+  tickDisplayTag(gFresh, hoverT > 0.05, lookPt)
 
   if (hoverT > 0.001) {
     engine.setLook(
@@ -462,6 +529,7 @@ hostSvg.addEventListener('pointerdown', (e) => {
 
 window.addEventListener('pointermove', (e) => {
   pointer = { x: e.clientX, y: e.clientY }
+  pointerAt = performance.now()
   lastPointerMoveTime = performance.now()
   lastActivityAt = clock
   if (engine.state === 'sleep') playOnce('wake')
@@ -694,6 +762,15 @@ bridge.onPlayState?.((id, duration) => playOnce(id, duration))
 
 // Custom-Animationen aus dem Bot-Tool pet_custom_animate
 bridge.onCustomAnim?.((spec) => startCustomAnim(spec))
+
+// Globaler Cursor (alle Monitore): Blickquelle Nr. 1. Bewegung irgendwo auf
+// dem Desktop zaehlt als Aktivitaet und weckt ihn auf.
+bridge.onGlobalCursor?.((p) => {
+  globalCursor = { ...p, at: performance.now() }
+  lastPointerMoveTime = performance.now()
+  if (engine) lastActivityAt = clock
+  if (!dragging && engine?.state === 'sleep') playOnce('wake')
+})
 
 // Chat-Dock direkt unter dem Ball mounten (gleiches Fenster wie der Bloub)
 mountChat(chatDock, {

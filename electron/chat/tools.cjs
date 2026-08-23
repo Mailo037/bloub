@@ -964,7 +964,9 @@ const SYS_MEDIA_INFO = defineTool({
 const SYS_SCREENSHOT = defineTool({
   name: 'desktop_screenshot',
   description:
-    'Take a screenshot of the user\'s screen and return it as an image so you can see what is on the display right now. ' +
+    'Take a screenshot of the user\'s display(s) and return it as an image so you can see what is on the screen right now. ' +
+    'With "all-display screenshots" enabled (default), ALL connected monitors are stitched into ONE image arranged by their real position; ' +
+    'each monitor region carries a small numbered badge in its top-left corner ("1", "2", ...) so you can tell the screens apart. ' +
     'Best combined with system_focused_app. The image is attached to your next turn; describe what you see.',
   parameters: {
     type: 'object',
@@ -983,7 +985,10 @@ const SYS_SCREENSHOT = defineTool({
       return { ok: false, content: shot.error || 'screenshot failed', isError: true }
     }
     // Bild wird vom Agent-Loop in den naechsten Request injiziert
-    return { ok: true, content: `Screenshot taken (${shot.width}x${shot.height}). Look at the attached image in your next turn.` }
+    return {
+      ok: true,
+      content: `Screenshot taken (${shot.width}x${shot.height}). ${shot.layout ?? ''} Look at the attached image in your next turn.`.trim()
+    }
   }
 })
 

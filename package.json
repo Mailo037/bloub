@@ -1,7 +1,7 @@
 {
   "name": "bloub-pet",
   "productName": "Bloub Pet",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Interactive AI desktop pet companion powered by the procedural bloub avatar engine",
   "author": "kasto",
   "repository": {

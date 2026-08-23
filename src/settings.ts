@@ -31,6 +31,24 @@ const eventsSwitch = createSwitch({
 })
 document.getElementById('events-toggle-slot')!.replaceChildren(eventsSwitch.el)
 
+// Screenshots: ALLE Monitore zu einem Bild zusammenfuegen (mit ID-Badges)
+const screenshotAllSwitch = createSwitch({
+  label: 'Screenshots: all displays',
+  onChange: (checked) => {
+    void bridge.updateConfig({ screenshotAllDisplays: checked })
+  }
+})
+document.getElementById('screenshot-all-slot')!.replaceChildren(screenshotAllSwitch.el)
+
+// Globaler Cursor-Follow ueber alle Monitore (Blick + ID-Tag am Cursor)
+const globalCursorSwitch = createSwitch({
+  label: 'Global cursor tracking',
+  onChange: (checked) => {
+    void bridge.updateConfig({ globalCursorTracking: checked })
+  }
+})
+document.getElementById('global-cursor-slot')!.replaceChildren(globalCursorSwitch.el)
+
 // Globale Dateizugriffs-Stufe: none / read / readwrite
 const fileAccessSeg = createSegmented({
   options: [
@@ -79,6 +97,71 @@ const driveSwitch = createSwitch({
   }
 })
 document.getElementById('drive-toggle-slot')!.replaceChildren(driveSwitch.el)
+
+/* ------------------------------------------- actions (was die AI darf) */
+
+// Expressions aendern (pet_set_expression)
+const exprAccessSwitch = createSwitch({
+  label: 'Change expressions',
+  onChange: (checked) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), expressionAccess: checked }
+    })
+  }
+})
+document.getElementById('expr-access-slot')!.replaceChildren(exprAccessSwitch.el)
+
+// Animationen (pet_animate / pet_stop_animation / pet_custom_animate)
+const animAccessSwitch = createSwitch({
+  label: 'Play animations',
+  onChange: (checked) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), animationAccess: checked }
+    })
+  }
+})
+document.getElementById('anim-access-slot')!.replaceChildren(animAccessSwitch.el)
+
+// Aussehen aendern (pet_set_shape / pet_set_color / pet_set_size)
+const appearAccessSwitch = createSwitch({
+  label: 'Change shape, color & size',
+  onChange: (checked) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), appearanceAccess: checked }
+    })
+  }
+})
+document.getElementById('appear-access-slot')!.replaceChildren(appearAccessSwitch.el)
+
+// Zeichnen auf dem Desktop (pet_draw_path)
+const drawAccessSwitch = createSwitch({
+  label: 'Draw on screen',
+  onChange: (checked) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), drawAccess: checked }
+    })
+  }
+})
+document.getElementById('draw-access-slot')!.replaceChildren(drawAccessSwitch.el)
+
+const maxToolCallsInput = document.getElementById('max-tool-calls') as HTMLInputElement
+const maxDrawCallsInput = document.getElementById('max-draw-calls') as HTMLInputElement
+
+maxToolCallsInput.addEventListener('change', () => {
+  const n = Math.min(60, Math.max(1, Math.round(Number(maxToolCallsInput.value) || 12)))
+  maxToolCallsInput.value = String(n)
+  void bridge.updateConfig({
+    chat: { ...(config.chat ?? {}), ...grantsInto({}), maxToolCallsPerTurn: n }
+  })
+})
+
+maxDrawCallsInput.addEventListener('change', () => {
+  const n = Math.min(20, Math.max(0, Math.round(Number(maxDrawCallsInput.value) || 0)))
+  maxDrawCallsInput.value = String(n)
+  void bridge.updateConfig({
+    chat: { ...(config.chat ?? {}), ...grantsInto({}), maxDrawCallsPerTurn: n }
+  })
+})
 
 /* ------------------------------------------------------- autopilot (Pad) */
 
@@ -216,6 +299,8 @@ bridge.onConfigChanged((fresh) => {
   sizeRange.value = String(config.ballSize)
   sizeVal.textContent = String(config.ballSize)
   eventsSwitch.setValue(config.eventsEnabled)
+  screenshotAllSwitch.setValue(config.screenshotAllDisplays !== false)
+  globalCursorSwitch.setValue(config.globalCursorTracking !== false)
   syncChatFields()
   renderGrants(config.chat?.grants ?? [])
   updateAboutAvatar()
@@ -362,6 +447,12 @@ function syncChatFields() {
   autoPilotModeSeg.setValue(c.autoPilot ?? 'off')
   autoPilotIntervalSeg.setValue(String(c.autoPilotInterval ?? 60))
   autoPilotChanceSeg.setValue(String(c.autoPilotChance ?? 100))
+  exprAccessSwitch.setValue(c.expressionAccess !== false)
+  animAccessSwitch.setValue(c.animationAccess !== false)
+  appearAccessSwitch.setValue(c.appearanceAccess !== false)
+  drawAccessSwitch.setValue(c.drawAccess !== false)
+  if (document.activeElement !== maxToolCallsInput) maxToolCallsInput.value = String(c.maxToolCallsPerTurn ?? 12)
+  if (document.activeElement !== maxDrawCallsInput) maxDrawCallsInput.value = String(c.maxDrawCallsPerTurn ?? 2)
 }
 
 function renderGrants(grants: Grant[]) {
@@ -806,7 +897,7 @@ shellRemoveBtn.addEventListener('click', () => {
 const BROWSER_HINTS: Record<string, string> = {
   off: 'Off: only window titles of browser windows are recorded (via app focus).',
   extension:
-    'Guided extension: press "Prepare extension folder" below, then in Chrome open chrome://extensions → enable Developer mode → "Load unpacked" → pick that folder → click the bloub-link icon and Connect. You can also browse or download the extension source via the GitHub link.',
+    'Guided extension: press "Prepare extension folder" below, then in Chrome open chrome://extensions → enable Developer mode → "Load unpacked" → pick that folder → click the bloub-link icon and Connect. Prefer downloading? Grab the ZIP from the GitHub release link.',
   cdp: 'Supervised relaunch: Chrome is restarted with a local debugging port and Bloub captures your outbound submits directly. Close all Chrome windows first, otherwise Chrome ignores the port.'
 }
 function syncBrowserHint(mode: string) {
@@ -832,8 +923,8 @@ extBtn?.addEventListener('click', () => {
   })
 })
 
-/** Quelle der Extension im Repo — auch ohne laufende App einsehbar. */
-const BLOUB_LINK_GITHUB_URL = 'https://github.com/Mailo037/bloub/tree/main/app/vendor/bloub-link'
+/** Release-Download der Extension (ZIP) — statt losen Dateien im Repo. */
+const BLOUB_LINK_GITHUB_URL = 'https://github.com/Mailo037/bloub/releases/tag/bloub-link-v1.0.0'
 document.getElementById('recall-ext-github-btn')?.addEventListener('click', () => {
   void bridge.openExternal?.(BLOUB_LINK_GITHUB_URL)
 })
@@ -974,6 +1065,8 @@ async function init() {
   sizeRange.value = String(config.ballSize)
   sizeVal.textContent = String(config.ballSize)
   eventsSwitch.setValue(config.eventsEnabled)
+  screenshotAllSwitch.setValue(config.screenshotAllDisplays !== false)
+  globalCursorSwitch.setValue(config.globalCursorTracking !== false)
   buildPills()
   refreshSelections()
   syncChatFields()

@@ -103,6 +103,22 @@
           <p class="hint">Periodically wakes the bloub and lets the AI decide on its own whether it wants to do something. The AI knows the user never asked. "Visible" shows its reply in the chat, "Silent" only shows actions — never text.</p>
         </section>
         <section class="well">
+          <h2>Actions</h2>
+          <div id="memory-toggle-slot" class="toggle-slot"></div>
+          <p class="hint">Persistent memory: remembers stable facts about you across chat sessions via memory_write/memory_get. Stored locally in your user data folder.</p>
+          <div id="expr-access-slot" class="toggle-slot"></div>
+          <div id="anim-access-slot" class="toggle-slot"></div>
+          <div id="appear-access-slot" class="toggle-slot"></div>
+          <div id="draw-access-slot" class="toggle-slot"></div>
+          <label class="fld">Max tool calls per answer
+            <input type="number" id="max-tool-calls" min="1" max="60" step="1" />
+          </label>
+          <label class="fld">Max draw calls per answer
+            <input type="number" id="max-draw-calls" min="0" max="20" step="1" />
+          </label>
+          <p class="hint">Caps how many tools the bloub may call while working on one message (and how often it may draw). When a budget is hit, it just answers in text instead.</p>
+        </section>
+        <section class="well">
           <h2>File access</h2>
           <div id="file-access-slot" class="toggle-slot"></div>
           <p class="hint">Global filesystem capability for granted folders. Read = list/read/search; read &amp; write additionally allows creating and editing files. "None" disables all filesystem tools.</p>
@@ -113,9 +129,11 @@
           <p class="hint">Allow the bloub to run terminal commands on your machine. Powerful — only enable if you trust it. Commands run with a 30s timeout and output is capped.</p>
         </section>
         <section class="well">
-          <h2>Memory</h2>
-          <div id="memory-toggle-slot" class="toggle-slot"></div>
-          <p class="hint">Let the bloub remember stable facts about you (name, preferences, projects) across chat sessions via memory_write/memory_get. Stored locally in your user data folder.</p>
+          <h2>Screens &amp; vision</h2>
+          <div id="screenshot-all-slot" class="toggle-slot"></div>
+          <p class="hint">When the AI takes a screenshot, capture ALL connected monitors and stitch them into one image arranged by their real position. Each monitor region gets a small numbered badge (1, 2, …) in its top-left corner so the AI can tell the screens apart. Off = only the monitor next to the pet.</p>
+          <div id="global-cursor-slot" class="toggle-slot"></div>
+          <p class="hint">Let the bloub watch your cursor across every monitor (with a tiny display-ID tag), not just inside its own window.</p>
         </section>
         <section class="well">
           <h2>Full drive access</h2>
@@ -161,7 +179,7 @@
             <span id="recall-ext-status"></span>
             <span>
               <button type="button" id="recall-ext-btn">Prepare extension folder</button>
-              <button type="button" id="recall-ext-github-btn">bloub-link on GitHub ↗</button>
+              <button type="button" id="recall-ext-github-btn">bloub-link (ZIP) ↗</button>
             </span>
           </div>
           <p class="hint">Only YOUR outbound actions (form sends, posts) are captured. Passwords and payment fields are never recorded. Incognito tabs are excluded. No extension is ever installed without your clicks inside Chrome's own UI.</p>

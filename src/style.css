@@ -642,3 +642,29 @@ body.settings-open #edit {
   text-align: center;
   opacity: 0.9;
 }
+
+/* -------------------------------------------------- monitor-id tag */
+
+/* Kleine Monitor-Kennung, die am (globalen) Cursor klebt. Ist der Cursor auf
+   einem anderen Monitor, klemmt sie sich an den Fensterrand in seine Richtung.
+   Rein dekorativ: kein Klick-Ziel, kein Drag-Target. */
+.display-tag {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(10, 10, 14, 0.72);
+  color: #e8e6e0;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: opacity 0.25s ease;
+}
+
+.display-tag.hidden {
+  opacity: 0;
+}
