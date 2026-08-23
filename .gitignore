@@ -11,6 +11,9 @@ out/
 
 # Test artifacts
 tools/*.png
+tools/**/*.png
+tools/state-shots/
+
 
 
 # Local environment and secrets

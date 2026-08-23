@@ -588,13 +588,13 @@ const PET_SET_EXPRESSION = defineTool({
 
 const PET_ANIMATE = defineTool({
   name: 'pet_animate',
-  description: 'Play a physical animation or emotion reaction on Bloub the desktop pet, with optional duration in seconds, or stop animations. Available animations: wink, bounce, nod, shake, burst, orbit, comet, swirl, exclaim, notify, wide, alert, thinking, sleep, lookaround (curious sideways eye sweep), excited (big darting eyes + little hops), focus (concentrated squinted stare), sideeye (suspicious sideways glance), stare (intense unblinking gaze), scan (quick up-down scanning), dizzy (eyes spinning in circles), peek (shy ducking peek upward), idle, stop.',
+  description: 'Play a physical animation or emotion reaction on Bloub the desktop pet, with optional duration in seconds, or stop animations. Available animations: wink, bounce, nod (agreeing nod), shake (head shake "no"), burst, orbit, comet, swirl, exclaim, notify, wide, alert, thinking, sleep, wake (waking-up stretch), lookaround (curious sideways eye sweep), excited (big darting eyes + little hops), focus (concentrated squinted stare), sideeye (suspicious sideways glance), stare (intense unblinking gaze), scan (quick up-down scanning), dizzy (eyes spinning in circles), peek (shy ducking peek upward), aha (joyful "got it!" hop with wide eyes and sparkles), ohno (worried head shake when something went wrong), idle, stop. REACTIONS: call `aha` the moment you figure something out or find what you were looking for, and `ohno` whenever something failed or went wrong — Bloub then shakes his head.',
   parameters: {
     type: 'object',
     properties: {
       animation: {
         type: 'string',
-        enum: ['wink', 'bounce', 'nod', 'shake', 'burst', 'orbit', 'comet', 'swirl', 'exclaim', 'notify', 'wide', 'alert', 'thinking', 'sleep', 'lookaround', 'excited', 'focus', 'sideeye', 'stare', 'scan', 'dizzy', 'peek', 'idle', 'stop'],
+        enum: ['wink', 'bounce', 'nod', 'shake', 'burst', 'orbit', 'comet', 'swirl', 'exclaim', 'notify', 'wide', 'alert', 'thinking', 'sleep', 'wake', 'lookaround', 'excited', 'focus', 'sideeye', 'stare', 'scan', 'dizzy', 'peek', 'aha', 'ohno', 'idle', 'stop'],
         description: 'The animation or state to trigger, or "stop"/"idle" to stop current animations and return to idle.'
       },
       durationSeconds: {

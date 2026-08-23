@@ -1,4 +1,4 @@
-# Bloub Pad 🐾
+# Bloub Pet 🐾
 
 An interactive, AI-powered desktop pet companion built with Electron, Vite, TypeScript, and the procedural vector morphing Bloub avatar engine.
 
@@ -7,6 +7,7 @@ An interactive, AI-powered desktop pet companion built with Electron, Vite, Type
 - **Procedural SVG Avatar Engine**: Smooth morphing body shapes, expressive eyes, dynamic animations (idle, talk, wink, bounce, orbit, burst, and custom keyframes).
 - **Multi-Protocol AI Integration**: Connects to OpenAI Completions, OpenAI Responses, or Anthropic Messages protocols (compatible with OpenAI, Ollama, LM Studio, Claude, OpenRouter, and more).
 - **Desktop Companion Capabilities**:
+  - Multi-monitor support with smooth cross-screen dragging
   - Transparent, frameless overlay window with drag-and-drop placement
   - Dockable interactive chat interface with Markdown rendering and quick actions
   - Built-in Agent Tools: workspace file reading/editing, directory tree inspection, search, system info, memory persistence, desktop screenshots, and shell execution (sandboxed with configurable permissions)
@@ -36,9 +37,9 @@ pnpm run dist
 ## Release Artifacts
 
 Electron builds are placed in elease/:
-- Bloub Pad Setup <version>.exe (NSIS Installer)
-- Bloub Pad <version>.exe (Standalone Portable Executable)
-- Bloub Pad-<version>-win.zip (Portable ZIP archive)
+- Bloub Pet Setup <version>.exe (NSIS Installer)
+- Bloub Pet <version>.exe (Standalone Portable Executable)
+- Bloub Pet-<version>-win.zip (Portable ZIP archive)
 
 ## License
 

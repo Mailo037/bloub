@@ -105,6 +105,19 @@ const IDLE_POOL: Array<[StateId, number]> = [
   ['peek', 1.4]
 ]
 
+/**
+ * Reaktion waehrend eines laufenden AI-Turns (aha/ohno/nod/shake): wechselt
+ * den State, ohne die AI-Flags anzutasten — playOnce wuerde isAiStreaming
+ * loeschen und den Turn-Ende-Flow kaputt machen. Nach busyUntil kehrt der
+ * tick den Bloub automatisch in den Talk-Zustand zurueck.
+ */
+function playReaction(id: StateId) {
+  const def = STATE_BY_ID.get(id)
+  if (!def) return
+  engine.setState(id, clock)
+  busyUntil = clock + Math.max(def.duration ?? 2, def.minDuration ?? 0)
+}
+
 function playRandomIdle() {
   const total = IDLE_POOL.reduce((s, [, w]) => s + w, 0)
   let r = Math.random() * total
@@ -443,7 +456,7 @@ hostSvg.addEventListener('pointerdown', (e) => {
   hostSvg.classList.add('dragging')
   lastInteraction = clock
   lastActivityAt = clock
-  if (engine.state === 'sleep') playOnce('wink')
+  if (engine.state === 'sleep') playOnce('wake')
   updateIgnore(false)
 })
 
@@ -451,7 +464,7 @@ window.addEventListener('pointermove', (e) => {
   pointer = { x: e.clientX, y: e.clientY }
   lastPointerMoveTime = performance.now()
   lastActivityAt = clock
-  if (engine.state === 'sleep') playOnce('wink')
+  if (engine.state === 'sleep') playOnce('wake')
   const target = e.target as Element | null
   const overUi = !!target?.closest?.('.ui')
 
@@ -493,6 +506,13 @@ window.addEventListener(
     hostSvg.classList.remove('dragging')
     lastInteraction = clock
     updateIgnore(false)
+    // Nur bei einem wirklich heftigen Schleudern benommen werden: hohe
+    // Wildness (Speed deutlich ueber der Scared-Schwelle) UND eine
+    // nennenswerte Distanz — kleine Zupfer oder kurze Verschiebungen
+    // loesen nichts.
+    if (wildness > 0.85 && dragMovedTotal > 150) {
+      playOnce('dizzy')
+    }
   },
   true
 )
@@ -601,7 +621,7 @@ hostSvg.addEventListener('contextmenu', (e) => {
   e.stopPropagation()
   lastInteraction = clock
   lastActivityAt = clock
-  if (engine.state === 'sleep') engine.setState('idle', clock)
+  if (engine.state === 'sleep') playOnce('wake')
   showPetMenu(e.clientX, e.clientY)
 })
 
@@ -647,7 +667,7 @@ function scheduleNextEvent(min = 7, max = 16) {
 
 editBtn.addEventListener('click', () => {
   lastActivityAt = clock
-  if (engine.state === 'sleep') engine.setState('idle', clock)
+  if (engine.state === 'sleep') playOnce('wake')
   bridge.toggleSettings()
   playOnce('swirl')
 })
@@ -657,7 +677,7 @@ bridge.onSettingsVisible((visible) => {
   document.body.classList.toggle('settings-open', visible)
   if (visible) {
     lastActivityAt = clock
-    if (engine.state === 'sleep') engine.setState('idle', clock)
+    if (engine.state === 'sleep') playOnce('wake')
   } else {
     updateIgnore(false)
   }
@@ -698,6 +718,12 @@ mountChat(chatDock, {
     isAiStreaming = false
     if (success) playOnce('wink')
     else engine.setState('idle', clock)
+  },
+  onReact: (kind) => {
+    // Gesichts-Reaktion aus dem Text ("aha" / "oh nein") — haelt den
+    // Streaming-Zustand intakt; der tick kehrt danach zum Reden zurueck.
+    lastActivityAt = clock
+    playReaction(kind === 'ohno' ? 'ohno' : 'aha')
   }
 })
 
@@ -768,6 +794,9 @@ function tick(ms: number) {
     if (engine.state !== 'thinking') {
       engine.setState('thinking', clock)
     }
+  } else if (isAiStreaming && engine.state !== 'talk' && clock >= busyUntil) {
+    // Nach einer Reaktion (aha/ohno) mitten im Stream zurueck zum Reden
+    engine.setState('talk', clock)
   } else if (!isAiStreaming && !dragging && !settingsOpen && inactiveDuration >= TIME_TO_SLEEP) {
     // Deep sleep state with floating rotating Zs
     if (engine.state !== 'sleep') {
@@ -841,6 +870,12 @@ async function init() {
 
   bot.update(engine.sample(0), ink())
   raf = requestAnimationFrame(tick)
+
+  // Debug-Hook (CDP/Selbstkontrolle): Zustaende und Anims von aussen erzwingen.
+  ;(window as unknown as Record<string, unknown>).__bloubDebug = {
+    play: playOnce,
+    state: () => engine.state
+  }
 }
 
 void init()

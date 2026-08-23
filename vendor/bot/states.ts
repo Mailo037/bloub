@@ -183,6 +183,16 @@ export type StateId =
   | 'dizzy'
   /** Koerper+Augen: schuechternes Lurken — duckt sich und lugt nach oben */
   | 'peek'
+  /** Aufwachen aus dem Tiefschlaf: strecken, Augen ploppen auf, kleiner Huepfer */
+  | 'wake'
+  /** Reaktion: "aha, jetzt hab ichs!" — Hopfer mit weiten Augen und Funken */
+  | 'aha'
+  /** Reaktion: "oh nein" — besorgtes Kopfschuetteln */
+  | 'ohno'
+  /** Reaktion: zustimmendes Nicken */
+  | 'nod'
+  /** Reaktion: klares Kopfschuetteln ("nein") */
+  | 'shake'
   /** transition d'interface, pas une animation du catalogue : hors `SEQUENCE` */
   | 'swirl'
 
@@ -528,8 +538,13 @@ export const STATES: StateDef[] = [
         sil: { ...circle(wobble), rot: sway * 40, cx: sway },
         // Yaw/Pitch beschreiben zusammen einen Kreis auf der Kugel
         gaze: { yaw: Math.cos(a) * 38, pitch: Math.sin(a) * 26, roll: sway * 60 },
-        split: 15,
-        eyes: pair(EYE_W * 0.85, EYE_H * 0.7)
+        // Verwirrte Augen (wie 'confus'): ein Auge gross und gekippt, das
+        // andere zu einem flachen Quergestreiften gequetscht.
+        split: 16.5,
+        eyes: [
+          { w: EYE_W * 1.08, h: EYE_H * 1.07, open: 1, tilt: -18 },
+          { w: EYE_W * 1.5, h: EYE_H * 0.41, open: 1, tilt: 14 }
+        ]
       })
     }
   },
@@ -559,6 +574,153 @@ export const STATES: StateDef[] = [
         gaze: { yaw: side, pitch: -20 - duck * 6, roll: side * 0.25 },
         split: 17,
         eyes: shyEyes
+      })
+    }
+  },
+
+  {
+    /**
+     * Aufwachen aus dem Tiefschlaf: schlafend zusammengequetscht mit
+     * geschlossenen Augen, dann ein tiefes Strecken, die Augen ploppen weit
+     * auf und zum Schluss ein kleiner Freuden-Hupfer. Wird beim ersten
+     * Kontakt nach dem Tiefschlaf gespielt.
+     */
+    id: 'wake',
+    duration: 1.8,
+    minDuration: 1.5,
+    morph: 0.35,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: false,
+    pose: (t) => {
+      const sleepy = 1 - easings.easeInOutCubic(clamp(t / 0.5))
+      const stretch = Math.sin(clamp((t - 0.35) / 0.65) * Math.PI)
+      const hop =
+        Math.abs(Math.sin(clamp((t - 1.0) / 0.8) * Math.PI)) *
+        clamp((t - 1.0) / 0.2) *
+        clamp((1.8 - t) / 0.25)
+      const squash = (1 - sleepy * 0.16) * (1 + stretch * 0.14) * (1 - hop * 0.06)
+      const open = easings.easeOutCubic(clamp((t - 0.8) / 0.3))
+      const ew = 0.28 + 0.06 * open
+      const eh = 0.07 + 0.5 * open
+      return base({
+        sil: { ...circle(1), sy: squash, sx: 1 / Math.sqrt(squash), cy: -stretch * 0.04 - hop * 0.1 },
+        gaze: { yaw: 0, pitch: 10 - 24 * open, roll: 0 },
+        split: 16.5,
+        eyes: [
+          { w: ew, h: eh, open: 1, tilt: -6 * (1 - open) },
+          { w: ew, h: eh, open: 1, tilt: 6 * (1 - open) }
+        ],
+        eyeAlpha: 1
+      })
+    }
+  },
+
+  {
+    /**
+     * Reaktion "aha, jetzt hab ichs!": kurzes Antizipations-Ducken, dann ein
+     * spritziger Hopfer mit weit aufgerissenen Augen und Funken ueber dem Kopf.
+     */
+    id: 'aha',
+    duration: 1.4,
+    minDuration: 1.2,
+    morph: 0.25,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: false,
+    pose: (t) => {
+      const duck = Math.max(0, 1 - t / 0.16)
+      const hop = Math.sin(clamp((t - 0.14) / 0.6) * Math.PI) * clamp((t - 0.14) / 0.1)
+      const settle = 1 - easings.easeInOutCubic(clamp((t - 0.95) / 0.45))
+      const squash = (1 - duck * 0.12) * (1 + hop * 0.1) * (1 + settle * 0.04)
+      const sparkT = clamp((t - 0.2) / 1.0)
+      const dots = [0, 1, 2].map((i) => {
+        const a = -Math.PI / 2 + (i - 1) * 0.7 + sparkT * 0.6
+        return {
+          x: Math.cos(a) * (0.95 + i * 0.12),
+          y: -0.75 + Math.sin(a) * 0.22 - sparkT * 0.25,
+          r: 0.045 + 0.015 * Math.sin(t * TAU * 2 + i * 2),
+          opacity: clamp(sparkT * 3) * (1 - sparkT) * 0.9
+        }
+      }).filter((d) => d.opacity > 0.01)
+      return base({
+        sil: { ...circle(1), sy: squash, sx: 1 / Math.sqrt(squash), cy: -hop * 0.12 },
+        gaze: { yaw: 0, pitch: -14 + 14 * easings.easeInOutCubic(clamp((t - 0.9) / 0.5)), roll: 0 },
+        split: 18.5,
+        eyes: pair(0.38, 0.6),
+        dots
+      })
+    }
+  },
+
+  {
+    /**
+     * Reaktion "oh nein": besorgtes Kopfschuetteln. Der Blick schuettelt
+     * seitlich mit einer Einhuellenden (baut auf, ebbt sauber ab), die Augen
+     * sind schraeg gestellt und wirken sorgenvoll — die Koerpersprache vom
+     * "das lief leider schief".
+     */
+    id: 'ohno',
+    duration: 1.8,
+    minDuration: 1.5,
+    morph: 0.3,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const shake = Math.sin(t * TAU * 2.4) * 22 * Math.sin(clamp(t / 1.8) * Math.PI)
+      // Besorgte Augen: Oberkanten neigen sich schraeg nach innen (mirrored tilt)
+      const worried: [EyeCfg, EyeCfg] = [
+        { w: 0.22, h: 0.4, open: 1, tilt: -22 },
+        { w: 0.22, h: 0.4, open: 1, tilt: 22 }
+      ]
+      return base({
+        gaze: { yaw: shake, pitch: -4, roll: shake * 0.18 },
+        split: 16,
+        eyes: worried,
+        offX: shake * 0.0012
+      })
+    }
+  },
+
+  {
+    /** Reaktion: zweifaches zustimmendes Nicken. */
+    id: 'nod',
+    duration: 1.4,
+    minDuration: 1.2,
+    morph: 0.3,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const env = Math.sin(clamp(t / 1.4) * Math.PI)
+      const pitch = Math.sin(t * TAU * 1.7) * 16 * env
+      return base({
+        gaze: { yaw: 0, pitch, roll: 0 },
+        split: 16,
+        eyes: pair(EYE_W * 1.05, EYE_H * 0.95),
+        offY: pitch * 0.0008
+      })
+    }
+  },
+
+  {
+    /** Reaktion: klares Kopfschuetteln — "nein". */
+    id: 'shake',
+    duration: 1.4,
+    minDuration: 1.2,
+    morph: 0.3,
+    baseFace: false,
+    baseBody: true,
+    blinkIn: true,
+    pose: (t) => {
+      const env = Math.sin(clamp(t / 1.4) * Math.PI)
+      const yaw = Math.sin(t * TAU * 2.2) * 20 * env
+      return base({
+        gaze: { yaw, pitch: 2, roll: yaw * 0.12 },
+        split: 16,
+        eyes: pair(EYE_W * 0.95, EYE_H * 0.9),
+        offX: yaw * 0.001
       })
     }
   },
@@ -907,7 +1069,9 @@ export const STATES: StateDef[] = [
     /**
      * Chat: Sprechen. Loopender Zustand (grosse duration wie `idle`): die
      * Augen sind leicht verengt, ein kleiner Mund unten pulst mit ~0.22 s
-     * Periode. Die Amplitude steuert spaeter der Anrufer ueber die Zeit.
+     * Periode. Der Mund ist ein Papier-Loch (wie die Augen) — als Tinte
+     * waere er unsichtbar und nur als Artefakt sichtbar, wenn er ein Auge
+     * ueberlappt. Etwas tiefer gesetzt, damit er die Augen meidet.
      */
     id: 'talk',
     duration: 600,
@@ -922,9 +1086,10 @@ export const STATES: StateDef[] = [
         dots: [
           {
             x: 0,
-            y: 0.34,
-            r: 0.035 + mouth * 0.05,
-            opacity: 0.95
+            y: 0.42,
+            r: 0.03 + mouth * 0.045,
+            opacity: 0.95,
+            color: 'paper'
           }
         ]
       })
@@ -987,7 +1152,12 @@ export const POSES: Record<StateId, number> = {
   stare: 1.6,
   scan: 1.2,
   dizzy: 1.8,
-  peek: 1.4
+  peek: 1.4,
+  wake: 0.9,
+  aha: 0.35,
+  ohno: 0.8,
+  nod: 0.6,
+  shake: 0.6
 }
 
 export const SEQUENCE: StateId[] = [

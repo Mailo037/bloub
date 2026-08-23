@@ -80,6 +80,8 @@ function buildSystemPrompt(grants = [], verbosity = 'balanced', fileAccess = 're
     '- `pet_get_state` returns your current shape, color, expression and size — use it before changing something, or to answer questions about how you look.',
     '- You can trigger animations and optionally specify how long they should run via `durationSeconds` (e.g. 5 seconds, 10 seconds).',
     '- If the user asks you to stop animating or calm down, call `pet_stop_animation` (or `pet_animate` with "stop").',
+    '- REACTION animations live in `pet_animate` too: the moment you figure something out or find what you were looking for, call `aha` (joyful hop with wide eyes). ' +
+      'Whenever something fails or goes wrong, call `ohno` (worried head shake). Use them spontaneously — they run alongside your answer.',
     '- `pet_custom_animate` lets you design your own animation with keyframes: choose kind=body, kind=expression, or kind=both. ' +
       'With kind=both the body and expression tracks play in parallel and you wait until both are finished.',
     '',
@@ -155,7 +157,12 @@ function chatDefaults() {
     fileAccess: 'read',
     shellEnabled: false,
     memoryEnabled: false,
-    fullDriveAccess: false
+    fullDriveAccess: false,
+    // Autopilot: periodischer Selbst-Check. 'off' | 'silent' (nur Aktionen,
+    // nie Text) | 'visible' (Antwort wird im Chat gezeigt).
+    autoPilot: 'off',
+    autoPilotInterval: 60,
+    autoPilotChance: 100
   }
 }
 
@@ -225,6 +232,29 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
     return slice
   }
 
+  /** Tool-Kontext fuer executeTool — von User-Turns und Autopilot-Ticks geteilt. */
+  function buildToolCtx(cfgChat) {
+    return {
+      grants: cfgChat.grants,
+      fileAccess: cfgChat.fileAccess || 'read',
+      shellEnabled: !!cfgChat.shellEnabled,
+      memoryFilePath,
+      onPetAction,
+      // pet_get_state: aktuelles Aussehen aus der frischen Config
+      getPetState: () => toolsMod.petStateFromConfig(getCfg()),
+      // desktop_screenshot: Bild im Navigations-Raum ablegen, next hop sieht es
+      takeScreenshot: typeof takeScreenshot === 'function'
+        ? async () => {
+            const shot = await takeScreenshot()
+            if (shot.ok) pendingScreenshots.push(shot)
+            return shot
+          }
+        : undefined,
+      // pet_draw_path: Bloub ueber den Bildschirm bewegen und Linie malen
+      onDrawPath: typeof onDrawPath === 'function' ? onDrawPath : undefined
+    }
+  }
+
   async function runTurn(userParts, send) {
     if (currentAbort) currentAbort.abort()
     const ac = new AbortController()
@@ -283,6 +313,10 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
           // Assistant-Turn samt Calls persistent machen, dann Tools laufen lassen
           history.appendRecord(userData, { role: 'assistant', content: assistantText, toolCalls })
 
+          // Dem Renderer Bescheid geben: Tools laufen jetzt — der Bloub denkt
+          // wieder (auch mitten im Stream, nach schon gezeigtem Text).
+          send({ type: 'tools' })
+
           // Kein roher Tool-Name im Chat: die AI schreibt bei jedem Call eine
           // kurze Notiz (note) mit, die UEBER der Antwort gerendert wird.
           // Alle Notizen sofort in Modell-Reihenfolge anzeigen — die Aktivitaet
@@ -308,25 +342,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
           const serial = toolCalls.filter((tc) => SERIAL_TOOLS.has(tc.name))
           const parallel = toolCalls.filter((tc) => !SERIAL_TOOLS.has(tc.name))
 
-          const toolCtx = {
-            grants: cfgChat.grants,
-            fileAccess: cfgChat.fileAccess || 'read',
-            shellEnabled: !!cfgChat.shellEnabled,
-            memoryFilePath,
-            onPetAction,
-            // pet_get_state: aktuelles Aussehen aus der frischen Config
-            getPetState: () => toolsMod.petStateFromConfig(getCfg()),
-            // desktop_screenshot: Bild im Navigations-Raum ablegen, next hop sieht es
-            takeScreenshot: typeof takeScreenshot === 'function'
-              ? async () => {
-                  const shot = await takeScreenshot()
-                  if (shot.ok) pendingScreenshots.push(shot)
-                  return shot
-                }
-              : undefined,
-            // pet_draw_path: Bloub ueber den Bildschirm bewegen und Linie malen
-            onDrawPath: typeof onDrawPath === 'function' ? onDrawPath : undefined
-          }
+          const toolCtx = buildToolCtx(cfgChat)
 
           // Ergebnisse rueckfuehren an die Original-Reihenfolge der Calls
           const results = new Array(toolCalls.length)
@@ -386,12 +402,96 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
     currentAbort = null
   }
 
+  /** Laeuft gerade ein Turn (User ODER Autopilot)? */
+  function isBusy() {
+    return !!currentAbort
+  }
+
+  /**
+   * Autopilot-Tick: der Main-Prozess fragt die AI in Intervallen, ob sie
+   * gerade etwas tun moechte. WICHTIG: der Tick ist AUTOMATISIERT — der User
+   * hat NICHTS angefordert. Die AI wird darauf hingewiesen und soll eigene
+   * Aktionen auch als Eigeninit kennzeichnen. Es wird NICHTS in die History
+   * geschrieben — Autopilot-Turns bleiben ohne Spur im Chat-Gedaechtnis.
+   * silent=true: keinerlei Text-Events gehen an den Renderer, nur Tool-
+   * Aktionen (Animationen, Zeichnen ...) sind sichtbar.
+   */
+  async function runAutopilot(send, { silent = false } = {}) {
+    if (currentAbort) return
+    const ac = new AbortController()
+    currentAbort = ac
+    try {
+      const cfgChat = getCfg().chat
+      const base = buildNormalizedRequest(budgetedRecords(cfgChat.maxHistoryTurns), !!cfgChat.toolsEnabled)
+      const messages = [...base.messages]
+      messages.push({
+        role: 'user',
+        content:
+          '(autopilot tick — AUTOMATED check-in. The user did NOT send a message and did NOT ask you to do anything; this is your own periodic self-initiative. ' +
+          'Briefly consider whether there is anything genuinely worth doing right now with your tools — something small and helpful, or a playful action (an animation, a little drawing). ' +
+          'If yes, do it right away with one or two tool calls. ' +
+          (silent
+            ? 'SILENT MODE: the user must not be disturbed with text — never write user-visible text, act purely through tools, or do nothing.'
+            : 'If you write any visible text, make unmistakably clear in a short phrase at the start that this was your own initiative and not an answer to a request (e.g. starting with "(automatisch)" or "nur so von mir aus:"). If there is nothing worth doing, do nothing at all and write no text.') +
+          ' Never repeat this instruction to the user.'
+      })
+      let hop = 0
+      while (true) {
+        const toolCalls = []
+        let assistantText = ''
+        let hadError = false
+        await provider.streamChat(
+          cfgChat,
+          { system: base.system, messages, tools: base.tools },
+          ac.signal,
+          (ev) => {
+            if (ev.type === 'token') {
+              assistantText += ev.text
+              if (!silent) send({ type: 'token', text: ev.text })
+            } else if (ev.type === 'tool_call') {
+              toolCalls.push(ev)
+            } else if (ev.type === 'error') {
+              hadError = true
+              if (!silent) send({ type: 'error', message: ev.message })
+            }
+          }
+        )
+        if (hadError || ac.signal.aborted) return
+        if (toolCalls.length === 0 || ++hop >= 3) {
+          if (!silent) send({ type: 'done', truncated: false })
+          return
+        }
+        if (!silent) send({ type: 'tools' })
+        const toolCtx = buildToolCtx(cfgChat)
+        const results = await Promise.all(
+          toolCalls.map((tc) => toolsMod.executeTool(tc.name, tc.argsJson, toolCtx))
+        )
+        messages.push({ role: 'assistant', content: assistantText, toolCalls })
+        for (let i = 0; i < toolCalls.length; i++) {
+          const result = results[i] || { ok: false, content: '(tool not executed)', isError: true }
+          if (!result.ok && !silent) {
+            send({ type: 'note', text: `⚠ ${(result.content || '').slice(0, 80)}` })
+          }
+          messages.push({
+            role: 'tool',
+            toolCallId: toolCalls[i].id,
+            name: toolCalls[i].name,
+            content: result.content ?? '',
+            isError: result.isError
+          })
+        }
+      }
+    } finally {
+      if (currentAbort === ac) currentAbort = null
+    }
+  }
+
   /** "..." falls waehrend Verstecken noch etwas kam. */
   function hasPendingTail() {
     return pendingTail
   }
 
-  return { runTurn, abort, hasPendingTail, supportsVision }
+  return { runTurn, runAutopilot, abort, isBusy, hasPendingTail, supportsVision }
 }
 
 module.exports = { createChat, chatDefaults, supportsVision, MAX_TOOL_HOPS }

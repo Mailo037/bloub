@@ -1,8 +1,8 @@
 {
   "name": "bloub-pet",
-  "productName": "Bloub Pad",
-  "version": "1.0.0",
-  "description": "Codex-Pad-style desktop pet running the bloub avatar engine",
+  "productName": "Bloub Pet",
+  "version": "1.0.1",
+  "description": "Interactive AI desktop pet companion powered by the procedural bloub avatar engine",
   "author": "kasto",
   "repository": {
     "type": "git",
@@ -20,8 +20,8 @@
     "dist:portable": "vite build && electron-builder --win portable"
   },
   "build": {
-    "appId": "com.bloub.pad",
-    "productName": "Bloub Pad",
+    "appId": "com.bloub.pet",
+    "productName": "Bloub Pet",
     "directories": {
       "output": "release"
     },
@@ -58,7 +58,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Bloub Pad"
+      "shortcutName": "Bloub Pet"
     },
     "publish": {
       "provider": "github",

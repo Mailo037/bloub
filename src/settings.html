@@ -14,13 +14,13 @@
     <header id="head">
       <div id="head-row">
         <span class="led"></span>
-        <h1>Pad</h1>
+        <h1>Pet</h1>
         <button id="close" class="no-drag" title="Close" aria-label="Close settings">×</button>
       </div>
       <nav id="tabs" class="no-drag" aria-label="Settings sections">
         <button type="button" data-tab="look" class="on">Look</button>
         <button type="button" data-tab="chat">Chat</button>
-        <button type="button" data-tab="pad">Pad</button>
+        <button type="button" data-tab="pet">Pet</button>
         <button type="button" data-tab="about">About</button>
       </nav>
     </header>
@@ -84,11 +84,22 @@
         </section>
       </div>
 
-      <div id="pane-pad" class="pane hidden">
+      <div id="pane-pet" class="pane hidden">
         <section class="well">
           <h2>Life</h2>
           <div id="events-toggle-slot" class="toggle-slot"></div>
           <p class="hint">Idle animations while nobody is poking it.</p>
+        </section>
+        <section class="well">
+          <h2>Autopilot</h2>
+          <div id="autopilot-mode-slot"></div>
+          <label class="fld">Every
+            <div id="autopilot-interval-slot"></div>
+          </label>
+          <label class="fld">Chance
+            <div id="autopilot-chance-slot"></div>
+          </label>
+          <p class="hint">Periodically wakes the bloub and lets the AI decide on its own whether it wants to do something. The AI knows the user never asked. "Visible" shows its reply in the chat, "Silent" only shows actions — never text.</p>
         </section>
         <section class="well">
           <h2>File access</h2>
@@ -112,7 +123,7 @@
         </section>
         <section class="well danger-well">
           <h2>Leave</h2>
-          <button type="button" id="quit-btn">Quit pad</button>
+          <button type="button" id="quit-btn">Quit pet</button>
         </section>
       </div>
 
@@ -122,10 +133,10 @@
             <div id="about-avatar-preview"></div>
             <div class="about-hero-text">
               <div class="about-title-row">
-                <h2 id="about-app-name">Bloub Pad</h2>
-                <span class="version-tag" id="about-app-version">v1.0.0</span>
+                <h2 id="about-app-name">Bloub Pet</h2>
+                <span class="version-tag" id="about-app-version">v1.0.1</span>
               </div>
-              <p class="about-desc">Codex-Pad desktop pet running the Bloub avatar engine.</p>
+              <p class="about-desc">Interactive AI desktop pet companion powered by the Bloub avatar engine.</p>
             </div>
           </div>
         </section>

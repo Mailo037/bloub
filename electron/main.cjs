@@ -600,6 +600,56 @@ function toggleChat() {
   else showChat()
 }
 
+/* ------------------------------------------------------------ autopilot */
+
+/**
+ * Autopilot: in einstellbaren Intervallen "wacht" der Bloub auf und die AI
+ * darf entscheiden, ob sie gerade etwas tun moechte. Drei Modi:
+ *   off     — Feature aus
+ *   silent  — AI handeln lassen, aber NIE Text zeigen (nur Aktionen)
+ *   visible — AI fragen und Antwort im Chat zeigen
+ * Pro Tick entscheidet ein "Wurf" (autoPilotChance in %) ob die AI gefragt
+ * wird. Läuft nie, während ein User-Turn aktiv ist.
+ */
+let autoPilotTimer = null
+
+function scheduleAutoPilot() {
+  clearTimeout(autoPilotTimer)
+  autoPilotTimer = null
+  const mode = config.chat?.autoPilot ?? 'off'
+  if (mode === 'off') return
+  const intervalSec = Math.max(15, Math.min(3600, Math.round(Number(config.chat?.autoPilotInterval) || 60)))
+  autoPilotTimer = setTimeout(() => {
+    autoPilotTimer = null
+    try {
+      autoPilotTick()
+    } catch {
+      /* die Timer-Kette stirbt nie */
+    }
+    scheduleAutoPilot()
+  }, intervalSec * 1000)
+}
+
+function autoPilotTick() {
+  const chatCfg = config.chat ?? {}
+  const mode = chatCfg.autoPilot ?? 'off'
+  if (mode === 'off') return
+  const chance = Math.max(0, Math.min(100, Number(chatCfg.autoPilotChance) ?? 100))
+  if (chance < 100 && Math.random() * 100 >= chance) return
+  const chat = getChat()
+  if (chat.isBusy()) return
+  // Der Bloub denkt waehrend des Ticks (wacht damit optisch auf)
+  if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'thinking', 8)
+  if (mode === 'visible') {
+    showChat()
+    // Wie ein eigener Turn behandeln: Dock auf, Thinking-Anim, Stream-Setup
+    sendChatEvent({ type: 'accepted', chipText: '', attachments: [] })
+    void chat.runAutopilot(sendChatEvent, { silent: false })
+  } else {
+    void chat.runAutopilot(sendChatEvent, { silent: true })
+  }
+}
+
 /* --------------------------------------------------- anhaenge & grants */
 
 const TEXT_EXT = new Set([
@@ -747,7 +797,7 @@ function registerHotkeys() {
     if (tray && !tray.isDestroyed() && !hotkeyFallbackNotified) {
       hotkeyFallbackNotified = true
       tray.displayBalloon?.({
-        title: 'Bloub Pad — hotkey changed',
+        title: 'Bloub Pet — hotkey changed',
         content: `${primary} was already taken. Use Ctrl+Alt+B to summon the bloub chat.`,
         iconType: 'info'
       })
@@ -816,7 +866,12 @@ ipcMain.handle('chat:test-provider', async () => {
   return provider.pingProvider(cfgChat)
 })
 
-ipcMain.handle('chat:clear-memory', () => history.archiveAndClear(app.getPath('userData')))
+ipcMain.handle('chat:clear-memory', () => {
+  const result = history.archiveAndClear(app.getPath('userData'))
+  // Pet-Fenster benachrichtigen, damit die UI die letzte Antwort entfernt
+  if (win && !win.isDestroyed()) win.webContents.send('chat:event', { type: 'archived' })
+  return result
+})
 
 ipcMain.handle('chat:get-api-key-status', () => ({ hasKey: !!config.chat.apiKeyEnc }))
 
@@ -943,6 +998,7 @@ ipcMain.handle('config:set', (_e, partial) => {
   syncSystemDriveGrant()
   saveConfig()
   broadcastConfig()
+  scheduleAutoPilot()
   return config
 })
 
@@ -1100,8 +1156,8 @@ function getDetailedSpecs() {
   }
 
   return {
-    appName: 'Bloub Pad',
-    appVersion: app.getVersion() || '1.0.0',
+    appName: 'Bloub Pet',
+    appVersion: app.getVersion() || '1.0.1',
     electronVersion: process.versions.electron,
     chromeVersion: process.versions.chrome,
     nodeVersion: process.versions.node,
@@ -1142,7 +1198,7 @@ function fetchLatestGitHubRelease(repo = 'Mailo037/bloub') {
       `https://api.github.com/repos/${repo}/releases/latest`,
       {
         headers: {
-          'User-Agent': 'Bloub-Pad-App',
+          'User-Agent': 'Bloub-Pet-App',
           Accept: 'application/vnd.github.v3+json'
         },
         timeout: 6000
@@ -1353,7 +1409,7 @@ function createTray() {
     )
   )
   tray = new Tray(icon)
-  tray.setToolTip('Bloub Pad')
+  tray.setToolTip('Bloub Pet')
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Show & Center Pet',
@@ -1397,6 +1453,7 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   registerHotkeys()
+  scheduleAutoPilot()
 })
 
 app.on('will-quit', () => {

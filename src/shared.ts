@@ -80,6 +80,12 @@ export interface ChatConfig {
   memoryEnabled: boolean
   /** Voller Zugriff auf das Systemlaufwerk (C:\) — Pad-Settings Opt-in. */
   fullDriveAccess: boolean
+  /** Autopilot: 'off' | 'silent' | 'visible' — periodische Selbst-Check-ins der AI. */
+  autoPilot: string
+  /** Autopilot-Intervall in Sekunden. */
+  autoPilotInterval: number
+  /** Autopilot-Wahrscheinlichkeit pro Tick in Prozent (0-100). */
+  autoPilotChance: number
 }
 
 export type PetConfigShape = {
@@ -110,12 +116,16 @@ export type ChatEvent =
   /** Menschenlesbare Aktivitaets-Notiz der AI (z. B. "adding a little life ✨") — wird UEBER der Antwort gerendert und zaehlt nicht als Antwort. */
   | { type: 'note'; text: string }
   | { type: 'token'; text: string }
+  /** Tool-Batch beginnt auszufuehren — der Bloub denkt wieder, auch mitten im Stream. */
+  | { type: 'tools' }
   /** Neuer Text-Segment beginnt (nach Tool-Calls): alten Antwort-Text verwerfen. */
   | { type: 'clear' }
   | { type: 'done'; truncated: boolean }
   | { type: 'error'; message: string }
   | { type: 'attachments'; chips: AttachChip[] }
   | { type: 'pending-tail' }
+  /** Chat-Memory wurde archiviert (Settings "Archive & clear") — letzte Antwort aus der UI entfernen. */
+  | { type: 'archived' }
 
 export interface AppSpecs {
   appName: string
@@ -328,7 +338,11 @@ export function makeBotSvg(): BotDom {
   svg.append(defs, backArcs, dotsBehind, bodyGroup, dotsFront, notifCircle, frontArcs)
 
   function dotNode(dot: BotFrame['dots'][number], ink: string, paper: string): SVGElement {
-    const fill = dot.color ?? (dot.depth === undefined ? ink : mixHex(paper, ink, dot.depth))
+    // color='paper' ist ein Sentinel fuer "Papierfarbe wie die Augen" — noetig
+    // fuer den Sprech-Mund, der als Tinte unsichtbar waere (Koerper ist Tinte).
+    const fill = dot.color === 'paper'
+      ? paper
+      : dot.color ?? (dot.depth === undefined ? ink : mixHex(paper, ink, dot.depth))
     if (dot.d) {
       return el('path', {
         d: dot.d,

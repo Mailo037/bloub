@@ -11,6 +11,8 @@ export interface MountChatCallbacks {
   onThinkingStart?: () => void
   onStreamingStart?: () => void
   onTurnEnd?: (success: boolean) => void
+  /** Gesichts-Reaktion aus dem Antwort-Text: "aha" (jetzt hab ichs) / "ohno" (Kopfschuetteln). */
+  onReact?: (kind: 'aha' | 'ohno') => void
 }
 
 export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): void {
@@ -220,6 +222,41 @@ function renderChips() {
     })
   }
 
+  /* ------------------------------------- gesichts-reaktionen aus dem text */
+
+  /**
+   * Der Bloub reagiert im Text mit der Mimik: erkennt der Renderer beim
+   * Streamen "aha/jetzt hab ichs"-Phrasen, hopft er freudig; bei "oh nein/
+   * Fehler"-Phrasen schuettelt er den Kopf. Mit Cooldown, damit Code-Blöcke
+   * oder Aufzählungen ihn nicht in Dauerschleife versetzen.
+   */
+  const REACT_RULES: Array<{ re: RegExp; kind: 'aha' | 'ohno' }> = [
+    {
+      re: /jetzt hab ich('?s| es)|ich hab'?s|ich habe es (gefunden|geschafft)|\baha\b|got it|found it|es klappt|hat geklappt|hat funktioniert|geschafft|solved it|erledigt/i,
+      kind: 'aha'
+    },
+    {
+      re: /oh nein|oh no\b|uh ?oh|oops|^ups\b|,\s*ups\b|fehler|leider nicht|hat leider|nicht geklappt|nicht funktioniert|schiefgegangen|schiefgelaufen|gescheitert|\berror\b/i,
+      kind: 'ohno'
+    }
+  ]
+  let lastReactKind = ''
+  let lastReactAt = 0
+
+  function maybeReact() {
+    const tail = buffer.slice(-500)
+    for (const { re, kind } of REACT_RULES) {
+      if (!re.test(tail)) continue
+      const now = Date.now()
+      if (now - lastReactAt < 6000) return
+      if (kind === lastReactKind && now - lastReactAt < 20000) return
+      lastReactKind = kind
+      lastReactAt = now
+      callbacks?.onReact?.(kind)
+      return
+    }
+  }
+
   /* ------------------------------------------------------------- senden */
 
   function send() {
@@ -372,6 +409,13 @@ function renderChips() {
       case 'note':
         addNote(ev.text)
         break
+      case 'tools':
+        // Tool-Batch laeuft: der Bloub denkt wieder — auch mitten im Stream.
+        if (streaming) {
+          setGlimmer(true)
+          callbacks?.onThinkingStart?.()
+        }
+        break
       case 'clear':
         // Neues Text-Segment nach Tool-Calls: alten Antwort-Text verwerfen
         buffer = ''
@@ -385,6 +429,7 @@ function renderChips() {
           callbacks?.onStreamingStart?.()
         }
         buffer += ev.text
+        maybeReact()
         scheduleStreamRender()
         break
       case 'done': {
@@ -450,6 +495,24 @@ function renderChips() {
         chipRow.appendChild(hint)
         break
       }
+      case 'archived':
+        // Memory archiviert (Settings "Archive & clear"): letzte Antwort,
+        // Chips und Notizen aus der UI entfernen.
+        streaming = false
+        setGlimmer(false)
+        buffer = ''
+        userScrolledUp = false
+        fileChips = []
+        grants = []
+        noteRow.replaceChildren()
+        replyBody.replaceChildren()
+        renderChips()
+        reply.classList.add('hidden')
+        inputRow.classList.remove('collapsed', 'sending')
+        if (!streaming && reply.classList.contains('hidden')) {
+          root.classList.add('hidden')
+        }
+        break
       default:
         break
     }

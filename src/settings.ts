@@ -79,6 +79,54 @@ const driveSwitch = createSwitch({
 })
 document.getElementById('drive-toggle-slot')!.replaceChildren(driveSwitch.el)
 
+/* ------------------------------------------------------- autopilot (Pad) */
+
+// Modus: aus / unsichtbar (nur Aktionen, nie Text) / sichtbar (Antwort im Chat)
+const autoPilotModeSeg = createSegmented({
+  options: [
+    { value: 'off', label: 'Off' },
+    { value: 'silent', label: 'Silent' },
+    { value: 'visible', label: 'Visible' }
+  ],
+  onChange: (value) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), autoPilot: value }
+    })
+  }
+})
+document.getElementById('autopilot-mode-slot')!.replaceChildren(autoPilotModeSeg.el)
+
+// Intervall zwischen den Selbst-Check-ins
+const autoPilotIntervalSeg = createSegmented({
+  options: [
+    { value: '30', label: '30 s' },
+    { value: '60', label: '1 min' },
+    { value: '120', label: '2 min' },
+    { value: '300', label: '5 min' }
+  ],
+  onChange: (value) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), autoPilotInterval: Number(value) }
+    })
+  }
+})
+document.getElementById('autopilot-interval-slot')!.replaceChildren(autoPilotIntervalSeg.el)
+
+// "Wurf" pro Tick: wie oft die AI ueberhaupt gefragt wird
+const autoPilotChanceSeg = createSegmented({
+  options: [
+    { value: '100', label: 'Always' },
+    { value: '50', label: '50 %' },
+    { value: '25', label: '25 %' }
+  ],
+  onChange: (value) => {
+    void bridge.updateConfig({
+      chat: { ...(config.chat ?? {}), ...grantsInto({}), autoPilotChance: Number(value) }
+    })
+  }
+})
+document.getElementById('autopilot-chance-slot')!.replaceChildren(autoPilotChanceSeg.el)
+
 let config: PetConfigShape
 
 function markSelected(container: HTMLElement, selectedId: string) {
@@ -310,6 +358,9 @@ function syncChatFields() {
   terminalSwitch.setValue(!!c.shellEnabled)
   memorySwitch.setValue(!!c.memoryEnabled)
   driveSwitch.setValue(!!c.fullDriveAccess)
+  autoPilotModeSeg.setValue(c.autoPilot ?? 'off')
+  autoPilotIntervalSeg.setValue(String(c.autoPilotInterval ?? 60))
+  autoPilotChanceSeg.setValue(String(c.autoPilotChance ?? 100))
 }
 
 function renderGrants(grants: Grant[]) {
@@ -603,7 +654,7 @@ async function handleCheckUpdates() {
     if (res.updateAvailable) {
       setUpdateStatus('alert', `New version available (v${res.latestVersion})`)
       if (updateDetailsCard && updateCardTitle && updateCardNotes) {
-        updateCardTitle.textContent = res.releaseName || `Bloub Pad v${res.latestVersion}`
+        updateCardTitle.textContent = res.releaseName || `Bloub Pet v${res.latestVersion}`
         if (updateCardDate) {
           updateCardDate.textContent = res.publishedAt
             ? new Date(res.publishedAt).toLocaleDateString()

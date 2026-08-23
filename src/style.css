@@ -440,6 +440,24 @@ body.settings-open #edit {
   border-radius: var(--radius-md);
   overflow-x: auto;
   text-align: left;
+  /* Duene, dunkle Scrollbar statt der komplett weissen Standard-Leiste */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.md-lite pre::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.md-lite pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-lite pre::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-pill);
+  background-clip: content-box;
 }
 
 .md-lite pre code {
