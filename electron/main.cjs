@@ -43,6 +43,48 @@ let win = null
 let settingsWin = null
 let tray = null
 let config = null
+let isQuitting = false
+let petRecoveryTimer = null
+let petRendererRecoveryTimer = null
+let petUnresponsiveTimer = null
+let petRendererHealthTimer = null
+let petRendererPingInFlight = false
+let runtimeLogPath = null
+
+/**
+ * Schreibt den letzten relevanten Laufzeitfehler lokal mit. Die Electron-Konsole
+ * ist in der ausgelieferten App normalerweise unsichtbar; ohne diese Spur laesst
+ * sich ein sporadisch verlorenes Fenster spaeter nicht unterscheiden von einem
+ * Renderer-Crash oder einem Windows-Haenger.
+ */
+function runtimeIssue(label, error) {
+  let detail = ''
+  if (error instanceof Error) detail = error.stack || error.message
+  else if (error !== undefined && error !== null) detail = String(error)
+  const line = `[${new Date().toISOString()}] ${label}${detail ? `: ${detail}` : ''}`
+  if (!runtimeLogPath) return
+  try {
+    fs.appendFileSync(runtimeLogPath, `${line}\n`, 'utf8')
+  } catch {
+    /* Logging darf die App nie selbst gefaehrden. */
+  }
+}
+
+function startRuntimeDiagnostics() {
+  try {
+    const logDir = path.join(app.getPath('userData'), 'logs')
+    fs.mkdirSync(logDir, { recursive: true })
+    runtimeLogPath = path.join(logDir, 'runtime.log')
+  } catch {
+    runtimeLogPath = null
+  }
+  runtimeIssue('app started')
+}
+
+// Diese Listener veraendern den Node-Exit nicht. Sie halten aber den letzten
+// Fehler in runtime.log fest, falls der Main-Prozess von Windows beendet wird.
+process.on('unhandledRejection', (reason) => runtimeIssue('unhandled rejection', reason))
+process.on('uncaughtExceptionMonitor', (error, origin) => runtimeIssue(`uncaught exception (${origin})`, error))
 
 /** Letztes Update-Check-Ergebnis (gecacht, an das Pet-Fenster gebroadcastet). */
 let lastUpdateResult = null
@@ -171,6 +213,158 @@ function stopPetWatchdog() {
     petWatchdog = null
   }
 }
+
+/**
+ * Manche Chromium-Crashes melden in bestimmten Electron-Builds kein
+ * render-process-gone-Event. Ein harmloser JavaScript-Ping aus dem Main-Prozess
+ * erkennt deshalb auch diesen Fall und laesst den bestehenden Recovery-Pfad
+ * greifen. Er laeuft nur alle fuenf Sekunden und nie waehrend eines Seitenloads.
+ */
+function checkPetRendererHealth() {
+  if (isQuitting || petRendererPingInFlight || !win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  if (win.webContents.isLoading()) return
+  const petWindow = win
+  petRendererPingInFlight = true
+  let settled = false
+  let timeout = null
+  const finish = (error) => {
+    if (settled) return
+    settled = true
+    clearTimeout(timeout)
+    petRendererPingInFlight = false
+    if (error && win === petWindow && !isQuitting) {
+      runtimeIssue('pet renderer health check failed', error)
+      schedulePetRendererRecovery('health check failed')
+    }
+  }
+  timeout = setTimeout(() => finish(new Error('renderer health check timed out')), 4_000)
+  petWindow.webContents.executeJavaScript('true', true).then(() => finish()).catch(finish)
+}
+
+function startPetRendererHealthCheck() {
+  if (petRendererHealthTimer) return
+  petRendererHealthTimer = setInterval(checkPetRendererHealth, 5_000)
+}
+
+function stopPetRendererHealthCheck() {
+  if (!petRendererHealthTimer) return
+  clearInterval(petRendererHealthTimer)
+  petRendererHealthTimer = null
+  petRendererPingInFlight = false
+}
+
+/**
+ * Der Pet-Renderer ist die eigentliche Anwendung. Falls Windows das
+ * rahmenlose Overlay schliesst, wird es statt der gesamten App neu erstellt.
+ * Ein kleiner Delay entkoppelt den "closed"-Event von der nativen Zerstörung.
+ */
+function schedulePetWindowRecovery(reason) {
+  if (isQuitting || petRecoveryTimer || !app.isReady()) return
+  runtimeIssue(`pet window recovery scheduled (${reason})`)
+  petRecoveryTimer = setTimeout(() => {
+    petRecoveryTimer = null
+    if (isQuitting || (win && !win.isDestroyed())) return
+    try {
+      createWindow()
+      startPetWatchdog()
+      broadcastUpdateStateToPet()
+      runtimeIssue('pet window recovered')
+    } catch (error) {
+      runtimeIssue('pet window recovery failed', error)
+    }
+  }, 350)
+}
+
+/** Einen abgestuerzten Renderer im bestehenden nativen Fenster wieder laden. */
+function schedulePetRendererRecovery(reason) {
+  if (isQuitting || petRendererRecoveryTimer) return
+  runtimeIssue(`pet renderer recovery scheduled (${reason})`)
+  petRendererRecoveryTimer = setTimeout(() => {
+    petRendererRecoveryTimer = null
+    if (isQuitting) return
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+      schedulePetWindowRecovery(`renderer unavailable: ${reason}`)
+      return
+    }
+    try {
+      win.webContents.reloadIgnoringCache()
+      win.show()
+      restorePetOnTop()
+      runtimeIssue('pet renderer reloaded')
+    } catch (error) {
+      runtimeIssue('pet renderer reload failed', error)
+      schedulePetWindowRecovery(`renderer reload failed: ${reason}`)
+    }
+  }, 750)
+}
+
+function attachPetRecoveryHandlers(petWindow) {
+  // Alt+F4 oder ein versehentlicher nativer Close darf das frei schwebende Pet
+  // nicht mehr mitsamt dem Electron-Prozess beenden. Zum echten Beenden gibt es
+  // weiterhin "Quit" im Tray bzw. den bestehenden Bestaetigungsdialog.
+  petWindow.on('close', (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    runtimeIssue('pet window close intercepted; hiding to tray')
+    try {
+      petWindow.hide()
+    } catch (error) {
+      runtimeIssue('could not hide intercepted pet window', error)
+    }
+  })
+
+  petWindow.on('closed', () => {
+    if (win !== petWindow) return
+    win = null
+    petTaskbar = false
+    schedulePetWindowRecovery('pet window closed')
+  })
+
+  petWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (win !== petWindow || isQuitting) return
+    const reason = details?.reason || 'unknown renderer exit'
+    runtimeIssue(`pet renderer gone (${reason}, exit ${details?.exitCode ?? 'unknown'})`)
+    schedulePetRendererRecovery(reason)
+  })
+
+  // Windows kann einen festgefahrenen Renderer sonst als AppHang beenden. Erst
+  // nach einer grosszuegigen Grace-Period wird genau dieser Renderer neu geladen.
+  petWindow.on('unresponsive', () => {
+    if (isQuitting || petUnresponsiveTimer) return
+    runtimeIssue('pet renderer became unresponsive')
+    petUnresponsiveTimer = setTimeout(() => {
+      petUnresponsiveTimer = null
+      if (isQuitting || win !== petWindow || petWindow.isDestroyed()) return
+      runtimeIssue('pet renderer remained unresponsive; restarting it')
+      try {
+        if (typeof petWindow.webContents.forcefullyCrashRenderer === 'function') {
+          petWindow.webContents.forcefullyCrashRenderer()
+        } else {
+          schedulePetRendererRecovery('unresponsive renderer')
+        }
+      } catch (error) {
+        runtimeIssue('could not restart unresponsive renderer', error)
+        schedulePetRendererRecovery('unresponsive renderer')
+      }
+    }, 15_000)
+  })
+  petWindow.on('responsive', () => {
+    if (!petUnresponsiveTimer) return
+    clearTimeout(petUnresponsiveTimer)
+    petUnresponsiveTimer = null
+    runtimeIssue('pet renderer responsive again')
+  })
+}
+
+// Der App-Level-Event deckt Electron-Versionen ab, die den gleichen Crash nicht
+// am einzelnen WebContents-Objekt weiterreichen. Die Timer-Sperre macht die
+// doppelte Meldung unschaedlich.
+app.on('render-process-gone', (_event, contents, details) => {
+  if (isQuitting || !win || win.isDestroyed() || contents !== win.webContents) return
+  const reason = details?.reason || 'unknown renderer exit'
+  runtimeIssue(`pet renderer gone at app level (${reason}, exit ${details?.exitCode ?? 'unknown'})`)
+  schedulePetRendererRecovery(reason)
+})
 
 /* ------------------------------------------------------------- config */
 
@@ -348,7 +542,7 @@ function createWindow() {
   console.log('[main] displays count:', screen.getAllDisplays().length)
   console.log('[main] creating window at coords:', x, y)
 
-  win = new BrowserWindow(
+  const petWindow = new BrowserWindow(
     overlayWindowOptions({
       x,
       y,
@@ -372,37 +566,40 @@ function createWindow() {
     })
   )
 
-  win.setTitle('')
-  win.removeMenu()
-  win.setMenu(null)
-  win.setMenuBarVisibility(false)
-  win.webContents.on('page-title-updated', (e) => e.preventDefault())
-  win.setAlwaysOnTop(true)
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  applyOverlayChrome(win)
+  win = petWindow
+  petWindow.setTitle('')
+  petWindow.removeMenu()
+  petWindow.setMenu(null)
+  petWindow.setMenuBarVisibility(false)
+  petWindow.webContents.on('page-title-updated', (e) => e.preventDefault())
+  petWindow.setAlwaysOnTop(true)
+  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  applyOverlayChrome(petWindow)
 
-  loadRenderer(win, 'index.html')
+  loadRenderer(petWindow, 'index.html')
 
-  win.webContents.on('did-fail-load', (_e, code, desc) => {
+  petWindow.webContents.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
     console.error(`[pet load-failed] ${code} ${desc}`)
+    if (isMainFrame && code !== -3) schedulePetRendererRecovery(`load failed ${code}: ${desc}`)
   })
 
   // Renderer-Fehler sichtbar machen (stderr)
-  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+  petWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     console.log(`[pet console:${level}] ${message} (${sourceId}:${line})`)
   })
 
-  win.show()
-  win.moveTop()
-  console.log('[main] window shown, bounds:', JSON.stringify(win.getBounds()), 'isVisible:', win.isVisible())
+  attachPetRecoveryHandlers(petWindow)
+  petWindow.show()
+  petWindow.moveTop()
+  console.log('[main] window shown, bounds:', JSON.stringify(petWindow.getBounds()), 'isVisible:', petWindow.isVisible())
 
   // Bloub darf nie verloren gehen: wird er unsichtbar/minimiert, in die Taskbar
   // legen; wird er gezeigt/restored, sofort zurueck auf always-on-top.
-  win.on('hide', () => setPetTaskbar(true))
-  win.on('minimize', () => setPetTaskbar(true))
-  win.on('show', () => restorePetOnTop())
-  win.on('restore', () => restorePetOnTop())
-  win.on('always-on-top-changed', (_e, isAlwaysOnTop) => {
+  petWindow.on('hide', () => setPetTaskbar(true))
+  petWindow.on('minimize', () => setPetTaskbar(true))
+  petWindow.on('show', () => restorePetOnTop())
+  petWindow.on('restore', () => restorePetOnTop())
+  petWindow.on('always-on-top-changed', (_e, isAlwaysOnTop) => {
     // Feuerwehr: verliert er den Top-Zustand (z. B. durch einen Z-Ordnungs-
     // Konflikt), sofort wieder anheben.
     if (!isAlwaysOnTop) reassertPetOnTop()
@@ -2326,13 +2523,18 @@ ipcMain.handle('shell:open-external', (_e, url) => {
 })
 
 
-let isQuitting = false
-
 function requestQuit() {
   if (isQuitting) return
   isQuitting = true
+  clearTimeout(petRecoveryTimer)
+  clearTimeout(petRendererRecoveryTimer)
+  clearTimeout(petUnresponsiveTimer)
+  petRecoveryTimer = null
+  petRendererRecoveryTimer = null
+  petUnresponsiveTimer = null
   stopCursorPolling()
   stopPetWatchdog()
+  stopPetRendererHealthCheck()
   // Laufende Agent-Arbeit sauber beenden: Provider-Stream + Tool-Calls abbrechen
   if (chat) chat.abort()
   // Custom-Animation-Waiter freigeben, damit kein Promise haengen bleibt
@@ -2441,9 +2643,11 @@ function createTray() {
 /* --------------------------------------------------------------- life */
 
 app.whenReady().then(() => {
+  startRuntimeDiagnostics()
   loadConfig()
   createWindow()
   startPetWatchdog()
+  startPetRendererHealthCheck()
   setupPttKeyDetection()
   attachPttBlurGuard()
 
@@ -2470,10 +2674,19 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   stopCursorPolling()
   stopPetWatchdog()
+  stopPetRendererHealthCheck()
   globalShortcut.unregisterAll()
   history.close(app.getPath('userData'))
   recallMod.stopRecall()
 })
 
-app.on('window-all-closed', () => app.quit())
+app.on('window-all-closed', (event) => {
+  if (isQuitting) return
+  event.preventDefault()
+  schedulePetWindowRecovery('all windows closed')
+})
+
+app.on('activate', () => {
+  if (!isQuitting) schedulePetWindowRecovery('application activated without pet window')
+})
 
