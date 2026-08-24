@@ -96,10 +96,10 @@ body {
 
 #edit {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 32px;
-  height: 32px;
+  top: -6px;
+  right: -6px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(17, 19, 24, 0.92);
@@ -110,8 +110,18 @@ body {
   cursor: pointer;
   opacity: 0;
   transform: scale(0.7);
-  transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease;
+  transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   padding: 0;
+}
+
+#edit:hover {
+  background: rgba(91, 140, 255, 0.35);
+  box-shadow: 0 0 12px rgba(91, 140, 255, 0.5);
+}
+
+#edit svg {
+  width: 12px;
+  height: 12px;
 }
 
 #ball-wrap:hover #edit,
@@ -120,8 +130,17 @@ body.settings-open #edit {
   transform: scale(1);
 }
 
-#edit:hover {
-  background: var(--color-accent-muted, rgba(91, 140, 255, 0.25));
+/* Update verfuegbar: Edit-Button wird blau + leuchtet */
+#edit.update-available {
+  border-color: rgba(64, 150, 255, 0.75);
+  background: rgba(37, 99, 235, 0.95);
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.85), 0 0 4px rgba(59, 130, 246, 0.9);
+}
+
+#edit.update-available:hover {
+  background: rgba(37, 99, 235, 1);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 1);
 }
 
 /* ---------------------------------------------------------- chat-dock */
@@ -297,6 +316,12 @@ body.settings-open #edit {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  transition: opacity 0.5s ease;
+}
+
+/* Antwort sanft ausfaden, bevor sie (bei neuem Segment oder Archivieren) entfernt wird. */
+#reply.fade-out {
+  opacity: 0;
 }
 
 #reply.hidden {
@@ -486,7 +511,7 @@ body.settings-open #edit {
 #input-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   flex: 0 0 auto;
   transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -502,6 +527,10 @@ body.settings-open #edit {
   display: none;
 }
 
+#input-row.hidden {
+  display: none;
+}
+
 /*
  * Schwarze Pill-Eingabe. scrollbar aus + resize none: KEINE nativen Pfeile,
  * das Auto-Wachsen uebernimmt chat.ts.
@@ -509,17 +538,19 @@ body.settings-open #edit {
 #chat-input {
   flex: 1;
   resize: none;
-  overflow: hidden;
-  min-height: 48px;
-  height: 48px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 40px;
+  height: 40px;
+  max-height: 90px;
   border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 24px;
+  border-radius: 20px;
   background: var(--color-input);
   color: var(--color-text);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
-  padding: 12px 18px;
+  padding: 9px 14px;
   outline: none;
   -webkit-user-select: text;
   user-select: text;
@@ -528,6 +559,24 @@ body.settings-open #edit {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* Eingabe-Scrollbar: dezent dunkel, nicht weiss — passt zum dunklen Theme */
+#chat-input::-webkit-scrollbar {
+  width: 5px;
+}
+
+#chat-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#chat-input::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+#chat-input::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 #chat-input::-webkit-scrollbar {
@@ -547,13 +596,13 @@ body.settings-open #edit {
 /* Runder Send-Knopf in der gewaehlten Bloub-Farbe (setzt chat.ts) */
 #send {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: #16203a;
   color: #e8e6e0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -576,9 +625,9 @@ body.settings-open #edit {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px;
-  background: rgba(20, 22, 28, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 5px;
+  background: rgba(17, 19, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(20px);
@@ -608,11 +657,11 @@ body.settings-open #edit {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: var(--color-text);
+  color: #e8e6e0;
   font-size: 12.5px;
   font-family: inherit;
   font-weight: 500;
@@ -622,7 +671,7 @@ body.settings-open #edit {
 }
 
 .pet-menu-item:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(91, 140, 255, 0.25);
   color: #ffffff;
 }
 
@@ -631,7 +680,7 @@ body.settings-open #edit {
 }
 
 .pet-menu-item.danger:hover {
-  background: rgba(255, 80, 80, 0.2);
+  background: rgba(255, 80, 80, 0.15);
   color: #ff8080;
 }
 
@@ -640,7 +689,7 @@ body.settings-open #edit {
   line-height: 1;
   width: 16px;
   text-align: center;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 /* -------------------------------------------------- monitor-id tag */
@@ -667,4 +716,87 @@ body.settings-open #edit {
 
 .display-tag.hidden {
   opacity: 0;
+}
+
+/* -------------------------------------------- push-to-talk mikro-zustand */
+
+/* Waehrend der Aufnahme ersetzt das animierte runde Mikro die Eingabezeile. */
+#mic-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 6px 0 12px;
+}
+
+#mic-btn {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(37, 99, 235, 0.35);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
+}
+
+/* Lautstaerke-Kreis: die Animation wird nur aktiv, wenn gesprochen wird.
+   --lvl (0..1) steuert Groesse und Farbe => reagiert auf die echte Stimme. */
+#mic-btn::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(96, 165, 250, 0.6);
+  opacity: calc(0.2 + var(--lvl, 0) * 0.8);
+  transform: scale(calc(1 + var(--lvl, 0) * 0.35));
+  transition: transform 0.08s linear, opacity 0.08s linear;
+}
+
+#mic-level {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  /* nur anzeigen wenn Pegel > 0 spricht (aktiviert durch .speaking) */
+}
+
+#mic-row.speaking #mic-btn {
+  background: rgba(37, 99, 235, 0.6);
+}
+
+/* Aufnahme laeuft (PTT oder Klick-Start): roter "rec"-Ton + sanfter Puls.
+   Klick stoppt und sendet — der Knopf ist damit eine Mute-/Stop-Taste. */
+#mic-btn.live {
+  background: rgba(239, 68, 68, 0.45);
+  border-color: rgba(252, 165, 165, 0.55);
+  box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);
+  animation: mic-live-pulse 1.6s ease-in-out infinite;
+}
+
+#mic-row.speaking #mic-btn.live {
+  background: rgba(239, 68, 68, 0.7);
+}
+
+@keyframes mic-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 26px rgba(239, 68, 68, 0.65);
+  }
+}
+
+#mic-status {
+  font-size: 11px;
+  color: var(--color-text-dim, #9aa0a6);
 }

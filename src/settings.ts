@@ -312,6 +312,8 @@ bridge.onConfigChanged((fresh) => {
   globalCursorSwitch.setValue(config.globalCursorTracking !== false)
   autostartSwitch.setValue(!!config.autostart)
   syncChatFields()
+  syncRecallFields()
+  syncAudioFields()
   renderGrants(config.chat?.grants ?? [])
   updateAboutAvatar()
 })
@@ -337,17 +339,27 @@ if (scrollContainer) {
   new ResizeObserver(updateScrollGradients).observe(scrollContainer)
 }
 
+/** Aktiver Tab fuer die Suchenavigation (Modul-Ebene). */
+let currentSearchTab = 'look'
+
+/** Auf einen Tab umschalten (Tab-Button und Pane sichtbar machen). */
+function switchTab(tabId: string) {
+  const btn = document.querySelector<HTMLButtonElement>(`#tabs [data-tab="${tabId}"]`)
+  if (!btn) return
+  currentSearchTab = tabId
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs [data-tab]')) {
+    b.classList.toggle('on', b === btn)
+  }
+  for (const pane of document.querySelectorAll<HTMLElement>('.pane')) {
+    pane.classList.toggle('hidden', pane.id !== `pane-${tabId}`)
+  }
+  scrollContainer?.scrollTo({ top: 0, behavior: 'instant' })
+  requestAnimationFrame(updateScrollGradients)
+}
+
 for (const btn of document.querySelectorAll<HTMLButtonElement>('#tabs [data-tab]')) {
   btn.addEventListener('click', () => {
-    const id = btn.dataset.tab ?? 'look'
-    for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs [data-tab]')) {
-      b.classList.toggle('on', b === btn)
-    }
-    for (const pane of document.querySelectorAll<HTMLElement>('.pane')) {
-      pane.classList.toggle('hidden', pane.id !== `pane-${id}`)
-    }
-    scrollContainer?.scrollTo({ top: 0, behavior: 'instant' })
-    requestAnimationFrame(updateScrollGradients)
+    switchTab(btn.dataset.tab ?? 'look')
   })
 }
 
@@ -815,6 +827,12 @@ bridge.onUpdateProgress?.((p) => {
 checkUpdatesBtn?.addEventListener('click', () => void handleCheckUpdates())
 installUpdateBtn?.addEventListener('click', () => void handleInstallUpdate())
 
+// Main bittet das Settings-Fenster, direkt einen bestimmten Tab zu oeffnen
+// (z. B. "about", wenn das Update nur einen Klick entfernt sein soll).
+bridge.onOpenTab?.((tab) => {
+  switchTab(tab)
+})
+
 viewReleaseBtn?.addEventListener('click', () => {
   if (currentUpdateInfo?.htmlUrl) {
     void bridge.openExternal?.(currentUpdateInfo.htmlUrl)
@@ -1049,6 +1067,89 @@ function syncRecallFields() {
   void refreshRecallStatus()
 }
 
+/* -------------------------------------------------------- audio / sprache */
+
+// Separater Gemini-Sprachbereich: STT + TTS, unabhaengig vom Chat-Provider.
+
+const audioModelSeg = createSegmented({
+  options: [
+    { value: 'gemini-2.5-flash-native-audio-preview-12-2025', label: '2.5 Flash Audio' },
+    { value: 'gemini-3.1-flash-live-preview', label: '3.1 Flash Live' }
+  ],
+  onChange: (value) => pushAudioConfig({ model: value })
+})
+document.getElementById('audio-model-slot')!.replaceChildren(audioModelSeg.el)
+
+const audioApiKeyInput = document.getElementById('audio-apikey') as HTMLInputElement
+const audioTestResult = document.getElementById('audio-test-result')!
+const audioTestBtn = document.getElementById('audio-test-btn') as HTMLButtonElement
+const audioPttInput = document.getElementById('audio-ptt') as HTMLInputElement
+
+const audioVoiceSwitch = createSwitch({
+  label: 'Read replies aloud',
+  onChange: (checked) => pushAudioConfig({ voiceEnabled: checked })
+})
+document.getElementById('audio-voice-slot')!.replaceChildren(audioVoiceSwitch.el)
+
+/** Audio-Änderungen an den Main schicken (mergt in den audio-Block). */
+function pushAudioConfig(partial: Record<string, unknown>) {
+  void bridge.updateConfig({ audio: { ...(config.audio ?? {}), ...partial } })
+}
+
+audioApiKeyInput?.addEventListener('change', () => {
+  void bridge.setAudioApiKey?.(audioApiKeyInput.value.trim()).then(({ ok }) => {
+    if (ok) {
+      audioApiKeyInput.value = ''
+      audioApiKeyInput.placeholder = '(saved)'
+    }
+  })
+})
+
+audioPttInput?.addEventListener('change', () => {
+  const combo = audioPttInput.value.trim()
+  void bridge.setAudioPttHotkey?.(combo || null)?.then((res) => {
+    audioPttInput.value = res?.activeHotkey ?? combo
+  })
+})
+
+audioTestBtn?.addEventListener('click', () => {
+  if (!bridge.testAudioConnection) {
+    audioTestResult.textContent = 'not supported'
+    return
+  }
+  audioTestBtn.disabled = true
+  audioTestResult.textContent = 'Testing…'
+  void bridge.testAudioConnection?.().then((res) => {
+    audioTestBtn.disabled = false
+    audioTestResult.textContent = res.ok ? '✓ voice engine ready' : `✗ ${res.error || 'failed'}`
+  })
+})
+
+document.getElementById('audio-guide-aistudio')?.addEventListener('click', () => {
+  void bridge.openExternal?.('https://aistudio.google.com/app/apikey')
+})
+document.getElementById('audio-guide-pricing')?.addEventListener('click', () => {
+  void bridge.openExternal?.('https://ai.google.dev/gemini-api/docs/pricing')
+})
+
+/** Audio-Felder aus der frischen Config befuellen. */
+function syncAudioFields() {
+  const a = config.audio
+  if (!a) return
+  audioModelSeg.setValue(a.model ?? '')
+  audioVoiceSwitch.setValue(!!a.voiceEnabled)
+  if (document.activeElement !== audioApiKeyInput) {
+    // Feld NICHT leeren — der eingegebene Wert bleibt sichtbar. Nur den
+    // Platzhalter als Hinweis setzen, ob ein Key hinterlegt ist.
+    void bridge.getAudioKeyStatus?.()?.then(({ hasKey }) => {
+      audioApiKeyInput.placeholder = hasKey ? '(saved)' : '(not set)'
+    })
+  }
+  if (document.activeElement !== audioPttInput) {
+    audioPttInput.value = a.pttHotkey ?? ''
+  }
+}
+
 /* ---- Resize: Ziehen an Kanten und Ecken ---- */
 
 const MIN_W = 300
@@ -1112,6 +1213,8 @@ async function init() {
   buildPills()
   refreshSelections()
   syncChatFields()
+  syncRecallFields()
+  syncAudioFields()
   renderGrants(config.chat?.grants ?? [])
   updateAboutAvatar()
   void loadSpecs()
@@ -1121,5 +1224,106 @@ async function init() {
 }
 
 void init()
+
+/* =====================================================================
+   Zusammenklappbare Sections + Suchleiste
+   ===================================================================== */
+
+function setupCollapsible(): void {
+  for (const well of document.querySelectorAll<HTMLElement>('.well.collapsible')) {
+    const head = well.querySelector<HTMLElement>('.well-head')
+    if (!head) continue
+    // Idempotent: ein zweiter Aufruf darf denselben Header nicht doppelt
+    // verkabeln (zwei Toggles = kein sichtbarer Effekt).
+    if (head.dataset.collapsibleBound) continue
+    head.dataset.collapsibleBound = '1'
+    head.addEventListener('click', (e) => {
+      // Klicks auf inaktive Controls im Header nicht schlucken (z.B. size-val ist nur Text)
+      well.classList.toggle('open', !well.classList.contains('open'))
+    })
+  }
+}
+
+const searchToggleBtn = document.getElementById('search-toggle')
+const searchBar = document.getElementById('search-bar')
+const searchInput = document.getElementById('search-input') as HTMLInputElement | null
+
+/** Bestimmt die durchsuchbaren Texte einer Well (Header + sichtbare Labels/Hints). */
+function wellSearchText(well: HTMLElement): string {
+  const parts: string[] = []
+  const head = well.querySelector('.well-head')
+  if (head) parts.push(head.textContent ?? '')
+  // Labels (fld-Label-Text) und Hints einsammeln - ohne Kontrollwerte
+  for (const el of well.querySelectorAll<HTMLElement>('.fld, .hint, .toggle-slot, .pills, #color-row, .about-desc')) {
+    parts.push(el.textContent ?? '')
+  }
+  return parts.join(' ').toLowerCase()
+}
+
+function setupSearch(): void {
+  if (!searchToggleBtn || !searchBar) return
+
+  let searchOpen = false
+
+  const toggleSearch = (open: boolean) => {
+    searchOpen = open
+    searchBar.classList.toggle('hidden', !open)
+    if (open) {
+      searchInput?.focus()
+    } else if (searchInput) {
+      searchInput.value = ''
+      clearSearch()
+    }
+  }
+
+  searchToggleBtn.addEventListener('click', () => toggleSearch(!searchOpen))
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') toggleSearch(false)
+  })
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase()
+      if (!q) {
+        clearSearch()
+        return
+      }
+      // Alle Sections ueber ALLE Tabs hinweg durchsuchen und automatisch zum
+      // passenden Tab springen (Treffer in anderen Tabs werden sichtbar).
+      let anyHit = false
+      let firstHitTab: string | null = null
+      for (const well of document.querySelectorAll<HTMLElement>('.well.collapsible')) {
+        const hit = wellSearchText(well).includes(q)
+        well.classList.toggle('search-hit', hit)
+        well.classList.toggle('search-hidden', !hit)
+        if (hit && !well.classList.contains('open')) well.classList.add('open')
+        if (hit) {
+          anyHit = true
+          if (!firstHitTab) {
+            const pane = well.closest<HTMLElement>('.pane')
+            if (pane) firstHitTab = pane.id.replace('pane-', '')
+          }
+        }
+      }
+      // Bei Treffern in einem anderen Tab automatisch dorthin wechseln
+      if (firstHitTab && firstHitTab !== currentSearchTab) {
+        switchTab(firstHitTab)
+      }
+    })
+  }
+
+  function clearSearch() {
+    for (const well of document.querySelectorAll<HTMLElement>('.well.collapsible')) {
+      well.classList.remove('search-hit', 'search-hidden')
+    }
+  }
+}
+
+/* Nur EINMAL aufrufen: jeder Doppelaufruf haengt jeden Header DOPPELT an
+ * einen Click-Listener — die beiden Toggles heben sich gegenseitig auf und
+ * die Section laesst sich nicht mehr zusammen- oder aufklappen. */
+setupCollapsible()
+setupSearch()
 
 

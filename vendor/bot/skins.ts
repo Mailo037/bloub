@@ -41,6 +41,10 @@ export type ShapeId =
   | 'croissant'
   | 'ovale'
   | 'octogone'
+  | 'soleil'
+  | 'fleur'
+  | 'fantome'
+  | 'argile'
 
 export interface BotShape {
   id: ShapeId
@@ -123,6 +127,56 @@ const crescent = normalize(unionOfCirclesProfile([{ x: 0.15, y: 0, r: 1.0 }, { x
 const oval = normalize(superellipseProfile(2, 1, 1.25), 1.1)
 const octagon = normalize(regularPolygonProfile(8, 1.02, 0.22, -67.5), 1.0)
 
+/** Soleil : couronne d'aigrettes fines, bien plus piquante que l'etoile a 5 branches. */
+const sun = normalize(profileFromPolygon(starPolygon(14, 1.0, 0.74, -90), 0, 0), 1.0)
+
+/** Fleur : cinq lobes arrondis autour d'un coeur, union de disques (comme le nuage). */
+const flower = normalize(
+  unionOfCirclesProfile([
+    { x: 0, y: 0, r: 0.52 },
+    ...Array.from({ length: 5 }, (_, i) => {
+      const a = -Math.PI / 2 + (i / 5) * Math.PI * 2
+      return { x: Math.cos(a) * 0.55, y: Math.sin(a) * 0.55, r: 0.48 }
+    })
+  ]),
+  1.02
+)
+
+/**
+ * Fantome : dome plein en haut, ourlet ondule en bas ( trois festons pendants).
+ * Polygone explicite car l'ourlet n'a pas d'expression radiale simple ; la forme
+ * reste etoilee vue de l'origine, donc profileFromPolygon s'applique.
+ */
+function ghostPolygon(): Point[] {
+  const pts: Point[] = []
+  const cy = -0.05
+  // dome : de 180deg a 360deg (y ecran vers le bas, donc au-dessus du centre)
+  for (let i = 0; i <= 32; i++) {
+    const a = Math.PI + (i / 32) * Math.PI
+    pts.push({ x: Math.cos(a), y: cy + Math.sin(a) })
+  }
+  // ourlet : trois demi-cercles pendants, de droite a gauche
+  const hem = 0.5
+  const r = 0.325
+  for (let k = 0; k < 3; k++) {
+    const cx = 0.65 - k * 2 * r
+    for (let i = 1; i <= 12; i++) {
+      const a = (i / 12) * Math.PI
+      pts.push({ x: cx + Math.cos(a) * r, y: hem + Math.sin(a) * r * 1.1 })
+    }
+  }
+  return pts
+}
+const ghost = normalize(profileFromPolygon(ghostPolygon(), 0, 0), 1.02)
+
+/** Argile : blob malaxe, plus cabosse que le galet (harmoniques plus marquees). */
+const clay = normalize(
+  ANGLES.map(
+    (a) => 1 + 0.085 * Math.cos(2 * a + 1.3) + 0.06 * Math.cos(3 * a + 0.4) + 0.03 * Math.cos(5 * a + 2.6)
+  ),
+  1.03
+)
+
 /** Capsule couchee : enveloppe de deux disques cote a cote. */
 const capsule = profileFromPolygon(hullOfCircles(-0.42, 0, 0.62, 0.42, 0, 0.62), 0, 0)
 
@@ -145,7 +199,11 @@ export const SHAPES: BotShape[] = [
   { id: 'losange', radii: diamond },
   { id: 'croissant', radii: crescent },
   { id: 'ovale', radii: oval },
-  { id: 'octogone', radii: octagon }
+  { id: 'octogone', radii: octagon },
+  { id: 'soleil', radii: sun },
+  { id: 'fleur', radii: flower },
+  { id: 'fantome', radii: ghost },
+  { id: 'argile', radii: clay }
 ]
 
 // Map indexee par `string` et non par `ShapeId` : les appelants interrogent avec

@@ -27,6 +27,7 @@ const recallMod = require('./recall/orchestrator.cjs')
 const shellHook = require('./recall/shell-hook.cjs')
 const recallStore = require('./recall/store.cjs')
 const browserLinkMod = require('./recall/browser-link.cjs')
+const geminiAudio = require('./chat/gemini-audio.cjs')
 
 Menu.setApplicationMenu(null)
 
@@ -42,6 +43,12 @@ let win = null
 let settingsWin = null
 let tray = null
 let config = null
+
+/** Letztes Update-Check-Ergebnis (gecacht, an das Pet-Fenster gebroadcastet). */
+let lastUpdateResult = null
+/** Gewuenschter Settings-Tab, der beim naechsten Oeffnen angezeigt wird. */
+let pendingSettingsTab = null
+let updateCheckTimer = null
 
 app.on('second-instance', () => {
   if (win && !win.isDestroyed()) {
@@ -80,6 +87,91 @@ function applyOverlayChrome(w) {
   w.setHasShadow(false)
 }
 
+/* ------------------------- Pet on-top safeguard + taskbar fallback */
+
+/**
+ * Watchdog + Lifecycle-Handling, damit der Bloub nie "verloren" geht.
+ *
+ * Bloub ist ein freischwebendes, immer-on-top-Fenster mit skipTaskbar:true.
+ * Manchmal verliert er den Top-Zustand oder wird unsichtbar (hinter Fenstern,
+ * minimiert, ausgeblendet). Genau dann soll er in die TASKBAR rutschen, damit
+ * er dort auffindbar und per Klick zurueckholbar ist. Sobald er (wieder)
+ * sichtbar ist, wird der always-on-top-Zustand re-assertiert und er verlaesst
+ * die Taskbar wieder — on top, aber nicht mehr als Taskbar-Fenster.
+ */
+let petTaskbar = false
+let petWatchdog = null
+
+/** Fenster in (true) bzw. aus (false) der Taskbar legen. */
+function setPetTaskbar(inTaskbar) {
+  if (petTaskbar === inTaskbar) return
+  petTaskbar = inTaskbar
+  if (win && !win.isDestroyed()) {
+    try {
+      win.setSkipTaskbar(!inTaskbar)
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+/**
+ * Bloub immer nach vorn holen: fehlenden always-on-top-Zustand re-assertieren.
+ * moveTop() wird NUR nachgeholt, wenn der Top-Zustand wirklich verloren war —
+ * so wird nicht alle 1,5 s die Z-Ordnung gestohlen (z. B. ueber dem Settings-
+ * Dialog oder anderen always-on-top-Fenstern). moveTop() raubt keinen Fokus
+ * und verschiebt das Fenster nicht.
+ */
+function reassertPetOnTop() {
+  if (!win || win.isDestroyed()) return
+  try {
+    if (!win.isAlwaysOnTop()) {
+      win.setAlwaysOnTop(true)
+      win.moveTop()
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Bloub zurueck auf den Top-Zustand holen und aus der Taskbar nehmen. */
+function restorePetOnTop() {
+  if (!win || win.isDestroyed()) return
+  reassertPetOnTop()
+  setPetTaskbar(false)
+}
+
+/** Ein Watchdog-Tick: sichtbar -> on top & raus aus der Taskbar; sonst -> Taskbar. */
+function petWatchdogCheck() {
+  if (!win || win.isDestroyed()) return
+  let visible = false
+  try {
+    visible = win.isVisible()
+  } catch {
+    return
+  }
+  if (visible) {
+    // Sichtbar: on top bleiben und aus der Taskbar nehmen
+    reassertPetOnTop()
+    setPetTaskbar(false)
+  } else {
+    // Unsichtbar/verloren: in der Taskbar halten, damit er auffindbar bleibt
+    setPetTaskbar(true)
+  }
+}
+
+function startPetWatchdog() {
+  if (petWatchdog) return
+  petWatchdog = setInterval(petWatchdogCheck, 1500)
+}
+
+function stopPetWatchdog() {
+  if (petWatchdog) {
+    clearInterval(petWatchdog)
+    petWatchdog = null
+  }
+}
+
 /* ------------------------------------------------------------- config */
 
 function configPath() {
@@ -110,6 +202,15 @@ function loadConfig() {
   if (!Array.isArray(config.chat.grants)) config.chat.grants = []
   // recall-Abschnitt ebenso (OFF by default — nichts vor Consent)
   config.recall = { ...recallMod.recallDefaults(), ...(config.recall ?? {}) }
+  // audio-Abschnitt: separate Gemini-Sprach-Engine
+  const audioDefaults = {
+    apiKeyEnc: '',
+    model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    voiceEnabled: false,
+    pttHotkey: 'Alt+X'
+  }
+  config.audio = { ...audioDefaults, ...(config.audio ?? {}) }
   syncSystemDriveGrant()
   applyAutoStart()
   return config
@@ -284,6 +385,18 @@ function createWindow() {
   win.show()
   win.moveTop()
   console.log('[main] window shown, bounds:', JSON.stringify(win.getBounds()), 'isVisible:', win.isVisible())
+
+  // Bloub darf nie verloren gehen: wird er unsichtbar/minimiert, in die Taskbar
+  // legen; wird er gezeigt/restored, sofort zurueck auf always-on-top.
+  win.on('hide', () => setPetTaskbar(true))
+  win.on('minimize', () => setPetTaskbar(true))
+  win.on('show', () => restorePetOnTop())
+  win.on('restore', () => restorePetOnTop())
+  win.on('always-on-top-changed', (_e, isAlwaysOnTop) => {
+    // Feuerwehr: verliert er den Top-Zustand (z. B. durch einen Z-Ordnungs-
+    // Konflikt), sofort wieder anheben.
+    if (!isAlwaysOnTop) reassertPetOnTop()
+  })
 }
 
 function loadRenderer(w, file) {
@@ -296,6 +409,11 @@ function loadRenderer(w, file) {
 function showSettings() {
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.show()
+    // Falls ein vorbestimmter Tab offen ist, direkt dorthin wechseln.
+    if (pendingSettingsTab) {
+      settingsWin.webContents.send('settings:open-tab', pendingSettingsTab)
+      pendingSettingsTab = null
+    }
     return
   }
 
@@ -346,7 +464,14 @@ function showSettings() {
     if (level >= 2) console.error(`[settings] ${message} (${sourceId}:${line})`)
   })
 
-  settingsWin.once('ready-to-show', () => settingsWin.show())
+  settingsWin.once('ready-to-show', () => {
+    settingsWin.show()
+    // Vorbestimmten Tab nach dem Laden setzen (z. B. About beim Update).
+    if (pendingSettingsTab) {
+      settingsWin.webContents.send('settings:open-tab', pendingSettingsTab)
+      pendingSettingsTab = null
+    }
+  })
   settingsWin.on('closed', () => {
     settingsWin = null
     if (win && !win.isDestroyed()) win.webContents.send('settings:visibility', false)
@@ -371,7 +496,7 @@ const chatState = {
 /** Overlay-Fenster: transparente Zeichenflaeche ueber dem Desktop. */
 const DRAW_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}
-  svg{position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none}
+  svg{position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;opacity:1;transition:opacity 0.6s ease}
 </style></head><body><svg id="draw-canvas" xmlns="http://www.w3.org/2000/svg"></svg></body></html>`
 
 let drawWin = null
@@ -453,10 +578,10 @@ function drawClear(w) {
 }
 
 /**
- * Zeichenflaeche 1,5 s, nachdem ein Turn komplett abgeschlossen ist, ausblenden
- * und fuer den naechsten Turn zuruecksetzen. Wird bei jedem 'done'-Event
- * (Generation fertig) oder bei Abbruch neu angestossen, damit mehrere
- * pet_draw_path-Calls desselben Turns sichtbar bleiben.
+ * Zeichenflaeche ausfaden und 1,5 s, nachdem ein Turn komplett abgeschlossen
+ * ist, ausblenden und fuer den naechsten Turn zuruecksetzen. Wird bei jedem
+ * 'done'-Event (Generation fertig) oder bei Abbruch neu angestossen, damit
+ * mehrere pet_draw_path-Calls desselben Turns sichtbar bleiben.
  */
 function queueDrawHide() {
   if (drawHideTimer) clearTimeout(drawHideTimer)
@@ -464,7 +589,14 @@ function queueDrawHide() {
     drawHideTimer = null
     drawActive = false
     drawSegments = []
-    if (drawWin && !drawWin.isDestroyed()) drawWin.hide()
+    // SVG-Opacity sanft ausfaden (0.6s CSS-Transition im Overlay), dann verstecken
+    if (drawWin && !drawWin.isDestroyed()) {
+      drawWin.webContents.executeJavaScript('document.getElementById("draw-canvas").style.opacity="0"').catch(() => {})
+    }
+    // Warten bis die Transition durch ist, dann verstecken
+    setTimeout(() => {
+      if (drawWin && !drawWin.isDestroyed()) drawWin.hide()
+    }, 650)
     // Lock freigeben, damit der Bloub wieder in normalen Zustand zurueckkehrt
     if (win && !win.isDestroyed()) {
       win.webContents.send('pet:anim-hold', false)
@@ -1132,6 +1264,61 @@ function registerHotkeys() {
   globalShortcut.register('Ctrl+Alt+P', () => toggleRecallPause())
 }
 
+/* Push-to-Talk: pttHotkey (Default Alt+X) im fokussierten Pet-Fenster ->
+   keydown = Mikro an, keyup = aus. Der before-input-Listener wird bei jeder
+   Hotkey-Aenderung entfernt und neu registriert, damit die neue Taste sofort
+   greift (und nicht die alte dauerhaft aktiv bleibt). */
+let pttDown = false
+let pttInputHandler = null
+
+function setupPttKeyDetection() {
+  if (!win || win.isDestroyed()) return
+  // Alten Listener entfernen — sonst prueft er fuer immer den Start-Hotkey.
+  if (pttInputHandler) {
+    win.webContents.removeListener('before-input-event', pttInputHandler)
+    pttInputHandler = null
+  }
+  const target = config.audio?.pttHotkey
+  if (!target) return
+  // "Alt+X" o.ä. in einen (alt, ctrl, shift, meta, key) Erkennungstoken zerlegen
+  const parts = target.toLowerCase().split('+')
+  const keyToken = parts.pop() || 'x'
+  const want = { alt: parts.includes('alt'), ctrl: parts.includes('ctrl') || parts.includes('control'), shift: parts.includes('shift'), meta: parts.includes('meta') || parts.includes('super') || parts.includes('cmd'), key: keyToken }
+
+  pttInputHandler = (_event, input) => {
+    if (input.type !== 'keyDown' && input.type !== 'keyUp') return
+    const isTarget =
+      (input.key === want.key || input.key.toLowerCase() === want.key) &&
+      !!(input.alt) === !!want.alt &&
+      !!(input.control) === !!want.ctrl &&
+      !!(input.shift) === !!want.shift &&
+      !!(input.meta) === !!want.meta
+    if (!isTarget) return
+    if (input.type === 'keyDown' && !pttDown) {
+      pttDown = true
+      if (win && !win.isDestroyed()) win.webContents.send('chat:ptt-start')
+    } else if (input.type === 'keyUp' && pttDown) {
+      pttDown = false
+      if (win && !win.isDestroyed()) win.webContents.send('chat:ptt-end')
+    }
+  }
+  win.webContents.on('before-input-event', pttInputHandler)
+}
+
+/**
+ * Fokus-Verlust waehrend PTT (Alt-Tab, Klick woandershin): das keyUp geht an
+ * ein anderes Fenster und kommt hier NIE an — ohne Guard haette die Aufnahme
+ * sonst kein Ende. Beim Blur die Aufnahme sauber beenden.
+ */
+function attachPttBlurGuard() {
+  if (!win || win.isDestroyed()) return
+  win.on('blur', () => {
+    if (!pttDown) return
+    pttDown = false
+    if (win && !win.isDestroyed()) win.webContents.send('chat:ptt-end')
+  })
+}
+
 /* ------------------------------------------------------ api-key store */
 
 function setApiKey(plain) {
@@ -1176,6 +1363,10 @@ ipcMain.handle('chat:send', async (_e, payload) => {
   }
   // Abschluss-Wink ans Pet melden (der Loop hat fertig geantwortet)
   if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
+  // Nach dem Senden gilt der Chat-Eingabemodus als zu (der Input ist collapsed).
+  // Dadurch reicht EIN Hotkey-Druck, um den Input wieder aufzuklappen statt
+  // erst "zuzumachen" (Bug: sonst muesste man den Toggle zweimal druecken).
+  chatVisible = false
   return true
 })
 
@@ -1229,6 +1420,95 @@ ipcMain.handle('hotkey:test', (_e, combo) => {
   return { ok, activeHotkey }
 })
 
+/* ------------------------------------------------------------ audio ipc */
+
+function getAudioApiKey() {
+  if (!config.audio?.apiKeyEnc) return ''
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return ''
+    return safeStorage.decryptString(Buffer.from(config.audio.apiKeyEnc, 'base64'))
+  } catch {
+    return ''
+  }
+}
+
+function setAudioApiKey(plain) {
+  if (!plain) {
+    if (config.audio) config.audio.apiKeyEnc = ''
+  } else if (safeStorage.isEncryptionAvailable()) {
+    config.audio.apiKeyEnc = safeStorage.encryptString(plain).toString('base64')
+  } else {
+    console.warn('[main] safeStorage unavailable - audio API key not persisted')
+    return false
+  }
+  saveConfig()
+  return true
+}
+
+ipcMain.handle('audio:set-api-key', (_e, key) => {
+  const ok = setAudioApiKey(String(key ?? '').trim())
+  return { ok }
+})
+
+// Nur true/false zurueckgeben — der Key selbst verlässt den Main nie.
+ipcMain.handle('audio:has-key', () => ({ hasKey: !!config.audio?.apiKeyEnc }))
+
+ipcMain.handle('audio:set-ptt-hotkey', (_e, combo) => {
+  const c = String(combo ?? '').trim() || null
+  if (config.audio) config.audio.pttHotkey = c ?? ''
+  saveConfig()
+  registerHotkeys()
+  // PTT-Erkennung auf die neue Taste umschalten (alter Listener wird entfernt)
+  setupPttKeyDetection()
+  broadcastConfig()
+  return { activeHotkey: config.audio?.pttHotkey || null }
+})
+
+ipcMain.handle('audio:test', async () => {
+  const apiKey = getAudioApiKey()
+  if (!apiKey) return { ok: false, error: 'Gemini API key not set (Audio tab)' }
+  const a = config.audio || {}
+  return await geminiAudio.ping({
+    apiKey,
+    baseUrl: a.baseUrl || 'https://generativelanguage.googleapis.com/v1beta'
+  })
+})
+
+// Push-to-Talk: Aufnahme (base64-Audio) -> Gemini-STT -> Text an den Renderer zurueck.
+ipcMain.handle('audio:transcribe', async (_e, payload) => {
+  const apiKey = getAudioApiKey()
+  if (!apiKey) return { ok: false, text: '', error: 'Gemini API key not set (Audio tab)' }
+  const data = payload?.data
+  if (!data || typeof data !== 'string') return { ok: false, text: '', error: 'no audio data' }
+  let buf
+  try {
+    buf = Buffer.from(data, 'base64')
+  } catch {
+    return { ok: false, text: '', error: 'bad audio data' }
+  }
+  const result = await geminiAudio.transcribe({
+    apiKey,
+    baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+    audioBuffer: buf,
+    mime: payload?.mime || 'audio/webm'
+  })
+  return result.ok ? { ok: true, text: result.text } : { ok: false, text: '', error: result.error }
+})
+
+// TTS: Text -> Audio (base64). Wird vom Renderer nach einer Chat-Antwort aufgerufen.
+ipcMain.handle('audio:speak', async (_e, text) => {
+  const apiKey = getAudioApiKey()
+  if (!apiKey || !text) return { ok: false, data: '', error: apiKey ? 'empty text' : 'Gemini API key not set (Audio tab)' }
+  const a = config.audio || {}
+  const result = await geminiAudio.textToSpeech({
+    apiKey,
+    baseUrl: a.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+    text,
+    voice: 'Kore'
+  })
+  if (!result.ok) return { ok: false, data: '', error: result.error }
+  return { ok: true, data: result.audio.toString('base64'), mime: result.mime || 'audio/wav' }
+})
 /* -------------------------------------------------------- grants ipc */
 
 ipcMain.handle('grants:set-secrets', (_e, grantPath, allowSecrets) => {
@@ -1445,6 +1725,12 @@ function stopCursorPolling() {
 ipcMain.on('ui:toggle-settings', () => {
   if (settingsWin && !settingsWin.isDestroyed()) closeSettings()
   else showSettings()
+})
+
+// Settings direkt auf einem bestimmten Tab oeffnen (z. B. "about" beim Update).
+ipcMain.on('ui:open-settings-tab', (_e, tab) => {
+  pendingSettingsTab = typeof tab === 'string' && tab ? tab : null
+  showSettings()
 })
 
 ipcMain.on('ui:close-settings', () => closeSettings())
@@ -1719,17 +2005,19 @@ function broadcastUpdateProgress(percent, status) {
   }
 }
 
-ipcMain.handle('app:check-updates', async () => {
+/** Update-Check ausfuehren, Ergebnis cachen und ans Pet-Fenster melden. */
+async function runUpdateCheck() {
   const currentVersion = app.getVersion() || '1.0.0'
   const { mode, gitRoot } = detectRunMode()
+  let result
 
   // Quellcode-Checkout: gegen den Git-Remote vergleichen statt Releases.
   if (mode === 'git' && gitRoot) {
     try {
-      return await gitUpdateCheck(gitRoot)
+      result = await gitUpdateCheck(gitRoot)
     } catch (err) {
       console.error('Git update check error:', err)
-      return {
+      result = {
         ok: true,
         mode: 'git',
         updateAvailable: false,
@@ -1739,11 +2027,12 @@ ipcMain.handle('app:check-updates', async () => {
         checkedAt: Date.now()
       }
     }
+    return finishUpdateCheck(result)
   }
 
   // Aus Quellcode ohne Git-Repo gestartet: kein Auto-Update moeglich.
   if (mode === 'source') {
-    return {
+    result = {
       ok: true,
       mode: 'source',
       updateAvailable: false,
@@ -1753,6 +2042,7 @@ ipcMain.handle('app:check-updates', async () => {
       htmlUrl: 'https://github.com/Mailo037/bloub',
       checkedAt: Date.now()
     }
+    return finishUpdateCheck(result)
   }
 
   // Gebautes Release: normaler Electron/GitHub-Release-Check.
@@ -1765,7 +2055,7 @@ ipcMain.handle('app:check-updates', async () => {
       const exeAsset = setupAsset || release.assets?.find((a) => a.name.endsWith('.exe'))
       const winAsset = exeAsset || release.assets?.find((a) => a.name.endsWith('.zip'))
 
-      return {
+      result = {
         ok: true,
         mode: 'packaged',
         updateAvailable: isNewer,
@@ -1779,12 +2069,13 @@ ipcMain.handle('app:check-updates', async () => {
         htmlUrl: release.html_url,
         checkedAt: Date.now()
       }
+      return finishUpdateCheck(result)
     }
   } catch (err) {
     console.error('Update check error:', err)
   }
 
-  return {
+  result = {
     ok: true,
     mode: 'packaged',
     updateAvailable: false,
@@ -1792,7 +2083,36 @@ ipcMain.handle('app:check-updates', async () => {
     latestVersion: currentVersion,
     checkedAt: Date.now()
   }
-})
+  return finishUpdateCheck(result)
+}
+
+/** Ergebnis cachen und den Update-Status ans Pet-Fenster (Edit-Button) melden. */
+function finishUpdateCheck(result) {
+  lastUpdateResult = result
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('pet:update-available', !!result?.updateAvailable)
+  }
+  return result
+}
+
+/** Update-Verfuegbarkeit ans Pet-Fenster melden (z. B. beim Fenster-Neuladen). */
+function broadcastUpdateStateToPet() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('pet:update-available', !!lastUpdateResult?.updateAvailable)
+  }
+}
+
+/** Periodischer Auto-Check: Edit-Button am Bloub wird blau, sobald ein Update da ist. */
+function scheduleAutoUpdateCheck() {
+  clearTimeout(updateCheckTimer)
+  updateCheckTimer = null
+  updateCheckTimer = setTimeout(() => {
+    updateCheckTimer = null
+    runUpdateCheck().catch(() => { /* non-fatal */ }).finally(scheduleAutoUpdateCheck)
+  }, 4 * 60 * 60 * 1000) // alle 4 Stunden
+}
+
+ipcMain.handle('app:check-updates', () => runUpdateCheck())
 
 /** Datei direkt per HTTPS-Stream herunterladen (folgt Redirects automatisch). */
 function downloadFile(url, destPath, onProgress) {
@@ -1938,6 +2258,7 @@ function requestQuit() {
   if (isQuitting) return
   isQuitting = true
   stopCursorPolling()
+  stopPetWatchdog()
   // Laufende Agent-Arbeit sauber beenden: Provider-Stream + Tool-Calls abbrechen
   if (chat) chat.abort()
   // Custom-Animation-Waiter freigeben, damit kein Promise haengen bleibt
@@ -2048,6 +2369,18 @@ function createTray() {
 app.whenReady().then(() => {
   loadConfig()
   createWindow()
+  startPetWatchdog()
+  setupPttKeyDetection()
+  attachPttBlurGuard()
+
+  // Mikrofon-Zugriff fuer Push-to-Talk erlauben (Permission im Renderer).
+  const { session } = require('electron')
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+    callback(permission === 'media' || permission === 'mediaKeySystem')
+  })
+
+  // Update-Status an das Pet-Fenster senden (Edit-Button-Typ)
+  broadcastUpdateStateToPet()
   startCursorPolling()
   createTray()
   registerHotkeys()
@@ -2055,10 +2388,14 @@ app.whenReady().then(() => {
   // Recall-Orchestrator: Producer laufen NUR wenn config.recall.enabled —
   // der Start selbst ist inert und schreibt nichts.
   recallMod.startRecall({ userData: app.getPath('userData'), getCfg: () => config })
+  // Automatischer Update-Check fuer den Edit-Button
+  runUpdateCheck().catch(() => { /* non-fatal */ })
+  scheduleAutoUpdateCheck()
 })
 
 app.on('will-quit', () => {
   stopCursorPolling()
+  stopPetWatchdog()
   globalShortcut.unregisterAll()
   history.close(app.getPath('userData'))
   recallMod.stopRecall()

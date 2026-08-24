@@ -53,12 +53,33 @@ let activeExprId: string | null = null
 let wildness = 0
 let isAiThinking = false
 let isAiStreaming = false
+/** Mikrofon-Aufnahme laeuft (PTT oder Mic-Klick): Bloub bleibt wach und "focus". */
+let isListening = false
 let lastActivityAt = 0
 let lastPointerMoveTime = performance.now()
 let lastMoveTime = 0
 
 const TIME_TO_SLEEPY = 90 // 1:30 min — erst danach schlaeft die Expression ein, davor laufen Custom-Events
 const TIME_TO_SLEEP = 120 // 2:00 min — Deep-Sleep kommt NACH der Sleepy-Expression
+/** Maus gilt nur als "beim Bloub", wenn sie in diesem Radius (Fenster-Pixel) um ihn ist. */
+const NEAR_RADIUS = 300
+
+/** Liefert true, wenn die Maus im NEAR_RADIUS um die Pet-Mitte ist. */
+function mouseNearPet(): boolean {
+  // Fensterrelativer Mauszeiger (pointer) oder globalCursor (falls vorhanden) nutzen
+  const GX = 310 // Pet-Mitte X im Fenster
+  const GY = 310 // Pet-Mitte Y im Fenster
+  if (globalCursor && performance.now() - globalCursor.at < 3500) {
+    // Globale Koordinaten des Cursors minus Fensterposition = fensterrelativ
+    const dx = globalCursor.gx - globalCursor.wx - GX
+    const dy = globalCursor.gy - globalCursor.wy - GY
+    return Math.hypot(dx, dy) <= NEAR_RADIUS
+  }
+  if (pointer) {
+    return Math.hypot(pointer.x - GX, pointer.y - GY) <= NEAR_RADIUS
+  }
+  return false
+}
 
 function ink(): string {
   return COLOR_BY_ID.get(config.color)?.hex ?? '#0a0a0c'
@@ -346,27 +367,19 @@ function ensureDisplayTag(): HTMLDivElement {
  * Kleine Monitor-ID ("1/2") direkt am Cursor bzw. — wenn der Cursor auf dem
  * ANDEREN Monitor ist — geklemmt am Fensterrand in Richtung des Cursors.
  * So ist immer sichtbar, auf welchem Screen der globale Cursor gerade liegt.
+ *
+ * AUSGESCHALTET: Die Monitor-ID-Pill ist deaktiviert und bleibt dauerhaft
+ * ausgeblendet. (Zum Wiedereinschalten einfach das `dispTag?.classList.add
+ * ('hidden'); return` entfernen.)
  */
 function tickDisplayTag(
   g: (GlobalCursorInfo & { at: number }) | null,
   show: boolean,
   lookPt: { x: number; y: number } | null
 ) {
-  if (!g || !show || !lookPt) {
-    dispTag?.classList.add('hidden')
-    return
-  }
-  const tag = ensureDisplayTag()
-  tag.textContent = g.displayCount > 1 ? `${g.display}/${g.displayCount}` : String(g.display)
-  const stageRect = document.getElementById('stage')!.getBoundingClientRect()
-  const pad = 12
-  // Am Cursor kleben, aber sicher innerhalb des eigenen Fensters halten:
-  // ist der Cursor auf dem anderen Monitor, wandert das Tag an den Rand.
-  const tx = clamp(lookPt.x - stageRect.left + 16, pad, stageRect.width - pad)
-  const ty = clamp(lookPt.y - stageRect.top - 20, pad, stageRect.height - pad)
-  tag.style.left = `${tx}px`
-  tag.style.top = `${ty}px`
-  tag.classList.remove('hidden')
+  // AUSGESCHALTET: Pill immer ausblenden und nie wieder zeigen.
+  dispTag?.classList.add('hidden')
+  return
 }
 
 function tickGaze(dt: number) {
@@ -552,8 +565,11 @@ window.addEventListener('pointermove', (e) => {
   pointer = { x: e.clientX, y: e.clientY }
   pointerAt = performance.now()
   lastPointerMoveTime = performance.now()
-  lastActivityAt = clock
-  if (engine.state === 'sleep') playOnce('wake')
+  // Nur "bei ihm" zaehlt als Aktivitaet — sonst koennte er nie einschlafen.
+  if (mouseNearPet()) {
+    lastActivityAt = clock
+    if (engine.state === 'sleep') playOnce('wake')
+  }
   const target = e.target as Element | null
   const overUi = !!target?.closest?.('.ui')
 
@@ -678,11 +694,26 @@ hostSvg.addEventListener('drop', (e) => {
 
 /* ------------------------------------------------- context menu */
 
+/** Liefert true, wenn das Chat-Dock mit aktivem (eingabefaehigem) Input sichtbar ist. */
+function isChatInputOpen(): boolean {
+  if (chatDock.classList.contains('hidden')) return false
+  const inputRow = chatDock.querySelector('#input-row')
+  return !!(inputRow && !inputRow.classList.contains('collapsed'))
+}
+
+/** Menuepunkt-Titel je nach Chat-Zustand: offen -> "Close input", sonst "Open input". */
+function updateChatMenuLabel() {
+  const chatLabel = menuChatBtn?.querySelector('span')
+  if (chatLabel) chatLabel.textContent = isChatInputOpen() ? 'Close input' : 'Open input'
+}
+
 function showPetMenu(clientX: number, clientY: number) {
   const stage = document.getElementById('stage')!
   const stageRect = stage.getBoundingClientRect()
   const menuWidth = 145
   const menuHeight = 120
+
+  updateChatMenuLabel()
 
   // Gewuenschte Stage-relative Position aus der Cursorposition
   const rawLeft = clientX - stageRect.left
@@ -717,9 +748,9 @@ hostSvg.addEventListener('contextmenu', (e) => {
 menuChatBtn?.addEventListener('click', (e) => {
   e.stopPropagation()
   hidePetMenu()
-  // IMMER oeffnen (nie togglen): nach dem Senden ist der Dock zwar sichtbar,
-  // aber der Input eingeklappt — ein Toggle wuerde dann erst verstecken.
-  bridge.showChat?.()
+  // Toggle: ist der Input offen, wird er geschlossen — sonst geoeffnet.
+  if (isChatInputOpen()) bridge.hideChat?.()
+  else bridge.showChat?.()
 })
 
 menuSettingsBtn?.addEventListener('click', (e) => {
@@ -757,8 +788,18 @@ function scheduleNextEvent(min = 7, max = 16) {
 editBtn.addEventListener('click', () => {
   lastActivityAt = clock
   if (engine.state === 'sleep') playOnce('wake')
-  bridge.toggleSettings()
+  // Update verfuegbar? Dann Settings direkt auf dem About-Tab oeffnen.
+  if (editBtn.classList.contains('update-available') && bridge.openSettingsTab) {
+    bridge.openSettingsTab('about')
+  } else {
+    bridge.toggleSettings()
+  }
   playOnce('swirl')
+})
+
+// Wird der Edit-Button blau, sobald ein Update verfuegbar ist.
+bridge.onUpdateAvailable?.((available) => {
+  editBtn.classList.toggle('update-available', !!available)
 })
 
 bridge.onSettingsVisible((visible) => {
@@ -787,15 +828,17 @@ bridge.onAnimationHold?.((hold) => setAnimHold(hold))
 // Custom-Animationen aus dem Bot-Tool pet_custom_animate
 bridge.onCustomAnim?.((spec) => startCustomAnim(spec))
 
-// Globaler Cursor (alle Monitore): Blickquelle Nr. 1. Bewegung irgendwo auf
-// dem Desktop zaehlt als Aktivitaet und weckt ihn auf.
+// Globaler Cursor (alle Monitore): Blickquelle Nr. 1. Bewegung zaehlt nur
+// als Aktivitaet, wenn die Maus in der Naehe des Bloub ist — sonst schlaeft
+// er nach einiger Zeit der Abwesenheit ein.
 bridge.onGlobalCursor?.((p) => {
   globalCursor = { ...p, at: performance.now() }
   lastPointerMoveTime = performance.now()
-  if (engine) lastActivityAt = clock
-  if (!dragging && engine?.state === 'sleep') playOnce('wake')
+  if (mouseNearPet()) {
+    if (engine) lastActivityAt = clock
+    if (!dragging && engine?.state === 'sleep') playOnce('wake')
+  }
 })
-
 // Chat-Dock direkt unter dem Ball mounten (gleiches Fenster wie der Bloub)
 mountChat(chatDock, {
   onThinkingStart: () => {
@@ -825,6 +868,18 @@ mountChat(chatDock, {
     // Streaming-Zustand intakt; der tick kehrt danach zum Reden zurueck.
     lastActivityAt = clock
     playReaction(kind === 'ohno' ? 'ohno' : 'aha')
+  },
+  onListeningChange: (active) => {
+    // Mikrofon an/aus (PTT oder Klick auf den Mic-Knopf): beim Zuhören
+    // aufmerksam fokussieren, beim Stop zurück ins Idle — der sendende
+    // Pfad schaltet danach eh auf "thinking".
+    lastActivityAt = clock
+    isListening = active
+    if (active) {
+      engine.setState('focus', clock)
+    } else if (!isAiThinking && !isAiStreaming) {
+      engine.setState('idle', clock)
+    }
   }
 })
 
@@ -898,6 +953,11 @@ function tick(ms: number) {
     if (engine.state !== 'thinking') {
       engine.setState('thinking', clock)
     }
+  } else if (isListening) {
+    // Mikrofon-Aufnahme: aufmerksam bleiben (kein Sleep, kein Idle-Wechsel)
+    if (engine.state !== 'focus') {
+      engine.setState('focus', clock)
+    }
   } else if (isAiStreaming && engine.state !== 'talk' && clock >= busyUntil) {
     // Nach einer Reaktion (aha/ohno) mitten im Stream zurueck zum Reden
     engine.setState('talk', clock)
@@ -917,6 +977,7 @@ function tick(ms: number) {
     !dragOverActive &&
     !isAiThinking &&
     !isAiStreaming &&
+    !isListening &&
     inactiveDuration < TIME_TO_SLEEPY &&
     Number.isFinite(nextEventAt) &&
     clock >= nextEventAt &&

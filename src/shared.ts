@@ -117,6 +117,22 @@ export type PetConfigShape = {
   autostart?: boolean
   chat?: Partial<ChatConfig>
   recall?: Partial<RecallConfig>
+  /** Separater Audio-/Sprach-Bereich (Gemini-powered, unabhaengig vom Chat-Provider). */
+  audio?: Partial<AudioConfig>
+}
+
+/** Audio/Sprache: separate Gemini-Engine fuer STT (Sprache->Text) und TTS (Text->Sprache). */
+export interface AudioConfig {
+  /** Gemini-API-Key (separat vom Chat-Key). */
+  apiKey: string
+  /** Modell-String: 'gemini-2.5-flash-native-audio-preview-12-2025' | 'gemini-3.1-flash-live-preview' */
+  model: string
+  /** Gemini-API-Base-URL (Default: https://generativelanguage.googleapis.com/v1beta). */
+  baseUrl: string
+  /** Sprach-Antwort aktiv (TTS nach jeder Chat-Antwort). */
+  voiceEnabled: boolean
+  /** Push-to-Talk-Hotkey (z. B. 'Alt+C'). */
+  pttHotkey: string
 }
 
 /**
@@ -252,6 +268,12 @@ export interface PetBridge {
   updateConfig(partial: Partial<PetConfig>): Promise<void>
   onConfigChanged(cb: (config: PetConfigShape) => void): void
   toggleSettings(): void
+  /** Settings direkt auf einem bestimmten Tab oeffnen (z. B. 'about'). */
+  openSettingsTab?(tab: string): void
+  /** Update-Verfuegbarkeit (Edit-Button wird blau). */
+  onUpdateAvailable?(cb: (available: boolean) => void): void
+  /** Vorbestimmter Tab, auf den das Settings-Fenster wechseln soll. */
+  onOpenTab?(cb: (tab: string) => void): void
   closeSettings(): void
   resizeSettings(x: number, y: number, width: number, height: number): void
   onSettingsVisible(cb: (visible: boolean) => void): void
@@ -297,6 +319,20 @@ export interface PetBridge {
   recallPurge?(): Promise<{ freed: number }>
   recallTogglePause?(): Promise<RecallStatus | null>
   recallExtensionFolder?(): Promise<{ ok: boolean; folder?: string; port?: number | null; error?: string }>
+  /* audio / voice (Gemini-powered, separate engine) */
+  setAudioApiKey?(key: string): Promise<{ ok: boolean }>
+  /** Nur true/false — der Key selbst verlässt den Main nie. */
+  getAudioKeyStatus?(): Promise<{ hasKey: boolean }>
+  setAudioPttHotkey?(combo: string | null): Promise<{ activeHotkey: string | null }>
+  testAudioConnection?(): Promise<{ ok: boolean; error?: string }>
+  /** Audio-Blob (base64) an Gemini-STT im Main schicken -> { ok, text, error }. */
+  transcribeAudio?(payload: { mime?: string; data: string }): Promise<{ ok: boolean; text: string; error?: string }>
+  /** Text in base64-Audio umwandeln (Gemini-TTS) -> { ok, data, mime, error }. */
+  speakText?(text: string): Promise<{ ok: boolean; data: string; mime?: string; error?: string }>
+  /** Push-to-Talk: Start der Aufnahme (Alt+C gedrueckt). */
+  onPttStart?(cb: () => void): void
+  /** Push-to-Talk: Ende der Aufnahme (Alt+C losgelassen). */
+  onPttEnd?(cb: () => void): void
   /* about & updates */
   getAppSpecs?(): Promise<AppSpecs>
   checkForUpdates?(): Promise<UpdateCheckResult>
@@ -346,7 +382,11 @@ export const SHAPE_LABELS: Record<string, string> = {
   losange: 'diamond',
   croissant: 'crescent',
   ovale: 'oval',
-  octogone: 'octagon'
+  octogone: 'octagon',
+  soleil: 'sun',
+  fleur: 'flower',
+  fantome: 'ghost',
+  argile: 'clay'
 }
 
 const LIGHT_PAPER = '#f4f2ec'

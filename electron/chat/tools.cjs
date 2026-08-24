@@ -446,7 +446,11 @@ const SHAPE_TO_ID = {
   diamond: 'losange',
   crescent: 'croissant',
   oval: 'ovale',
-  octagon: 'octogone'
+  octagon: 'octogone',
+  sun: 'soleil',
+  flower: 'fleur',
+  ghost: 'fantome',
+  clay: 'argile'
 }
 const ID_TO_SHAPE = Object.fromEntries(Object.entries(SHAPE_TO_ID).map(([k, v]) => [v, k]))
 
@@ -1204,8 +1208,10 @@ const ALL_TOOLS = [...PET_TOOLS, ...SYS_TOOLS, ...MEMORY_TOOLS, ...FS_TOOLS]
 // Recall-Tools kommen aus dem eigenen Modul (kein Zirkelbezug: die pruefen
 // ihren Aktiv-Zustand selbst ueber den Orchestrator und antworten mit
 // isError "activity recall is disabled", wenn aus/pausiert).
+let RECALL_TOOLS = []
 try {
-  ALL_TOOLS.push(...require('../recall/tools.cjs').RECALL_TOOLS)
+  RECALL_TOOLS = require('../recall/tools.cjs').RECALL_TOOLS || []
+  ALL_TOOLS.push(...RECALL_TOOLS)
 } catch {
   /* Recall-Modul fehlt/fehlerhaft — Chat laeuft ohne weiter */
 }

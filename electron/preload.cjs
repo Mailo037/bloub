@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('bloubPet', {
   dragEnd: () => ipcRenderer.send('pet:dragEnd'),
   setIgnore: (ignore) => ipcRenderer.send('pet:setIgnore', ignore),
   toggleSettings: () => ipcRenderer.send('ui:toggle-settings'),
+  // Settings direkt auf einem bestimmten Tab oeffnen (z. B. "about" beim Update-Click)
+  openSettingsTab: (tab) => ipcRenderer.send('ui:open-settings-tab', tab),
+  // Update-Verfuegbarkeit (Edit-Button wird blau)
+  onUpdateAvailable: (cb) => ipcRenderer.on('pet:update-available', (_e, available) => cb(available)),
   closeSettings: () => ipcRenderer.send('ui:close-settings'),
   resizeSettings: (x, y, width, height) =>
     ipcRenderer.send('ui:resize-settings', x, y, width, height),
@@ -14,6 +18,8 @@ contextBridge.exposeInMainWorld('bloubPet', {
   updateConfig: (partial) => ipcRenderer.invoke('config:set', partial),
   onConfigChanged: (cb) => ipcRenderer.on('config:changed', (_e, config) => cb(config)),
   onSettingsVisible: (cb) => ipcRenderer.on('settings:visibility', (_e, visible) => cb(visible)),
+  // Vorbestimmter Tab, auf den das Settings-Fenster wechseln soll
+  onOpenTab: (cb) => ipcRenderer.on('settings:open-tab', (_e, tab) => cb(tab)),
   onQuitRequested: (cb) => ipcRenderer.on('pet:quit-requested', () => cb()),
   confirmQuit: () => ipcRenderer.send('pet:quit-confirm'),
   quit: () => ipcRenderer.send('pet:quit'),
@@ -54,6 +60,17 @@ contextBridge.exposeInMainWorld('bloubPet', {
   recallPurge: () => ipcRenderer.invoke('recall:purge'),
   recallTogglePause: () => ipcRenderer.invoke('recall:toggle-pause'),
   recallExtensionFolder: () => ipcRenderer.invoke('recall:extension-folder'),
+  // audio / voice (Gemini-powered, separate engine)
+  setAudioApiKey: (key) => ipcRenderer.invoke('audio:set-api-key', key),
+  getAudioKeyStatus: () => ipcRenderer.invoke('audio:has-key'),
+  setAudioPttHotkey: (combo) => ipcRenderer.invoke('audio:set-ptt-hotkey', combo),
+  testAudioConnection: () => ipcRenderer.invoke('audio:test'),
+  transcribeAudio: (payload) => ipcRenderer.invoke('audio:transcribe', payload),
+  // TTS: Text in base64-Audio umwandeln
+  speakText: (text) => ipcRenderer.invoke('audio:speak', text),
+  // PTT: Main signalisiert Start/Ende der Aufnahme (via before-input-event)
+  onPttStart: (cb) => ipcRenderer.on('chat:ptt-start', () => cb()),
+  onPttEnd: (cb) => ipcRenderer.on('chat:ptt-end', () => cb()),
   // about & updates
   getAppSpecs: () => ipcRenderer.invoke('app:get-specs'),
   checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),

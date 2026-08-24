@@ -13,6 +13,8 @@ export interface MountChatCallbacks {
   onTurnEnd?: (success: boolean) => void
   /** Gesichts-Reaktion aus dem Antwort-Text: "aha" (jetzt hab ichs) / "ohno" (Kopfschuetteln). */
   onReact?: (kind: 'aha' | 'ohno') => void
+  /** Mikrofon-Aufnahme gestartet/beendet (PTT oder Klick) — fuer die Bloub-Animation. */
+  onListeningChange?: (active: boolean) => void
 }
 
 export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): void {
@@ -29,6 +31,17 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
       <textarea id="chat-input" rows="1" placeholder="ask the bloub…" spellcheck="false"></textarea>
       <button id="send" aria-label="Send">➤</button>
     </div>
+    <div id="mic-row" class="hidden">
+      <div id="mic-btn" title="Listening…">
+        <div id="mic-level"></div>
+        <svg id="mic-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+          <path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M12 17v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div id="mic-status">Listening…</div>
+    </div>
   `
 
   const chipRow = root.querySelector('#chip-row') as HTMLElement
@@ -40,6 +53,9 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   const inputRow = root.querySelector('#input-row') as HTMLElement
   const input = root.querySelector('#chat-input') as HTMLTextAreaElement
   const sendBtn = root.querySelector('#send') as HTMLButtonElement
+  const micRow = root.querySelector('#mic-row') as HTMLElement
+  const micBtn = root.querySelector('#mic-btn') as HTMLElement
+  const micStatus = root.querySelector('#mic-status') as HTMLElement
 
   interface FileChip extends AttachChip {
     id: string
@@ -51,6 +67,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   let buffer = ''
   let rafPending = false
   let userScrolledUp = false
+  let voiceEnabled = false
 
   /* Kein clampDock mehr: die Dock-Hoehe ist per CSS hart auf den Platz
    * UNTER dem Ball begrenzt (#chat-dock max-height). Ueberschüssige Antwort
@@ -69,6 +86,22 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
       sendBtn.style.color = bright > 0.6 ? '#101014' : '#f4f2ec'
       sendBtn.style.borderColor = 'rgba(255,255,255,0.12)'
     }
+  }
+
+  /* ---------------------------------------------------- antwort ausfaden */
+
+  /** Antwort sanft ausfaden und danach den Inhalt leeren. */
+  function fadeOutReply(done?: () => void) {
+    if (reply.classList.contains('hidden')) {
+      done?.()
+      return
+    }
+    reply.classList.add('fade-out')
+    setTimeout(() => {
+      replyBody.replaceChildren()
+      reply.classList.remove('fade-out')
+      done?.()
+    }, 500)
   }
 
   /* -------------------------------------------------------------- chips */
@@ -341,9 +374,10 @@ function renderChips() {
 
   function autosizeInput() {
     input.style.height = 'auto'
-    const minH = 48
+    const minH = 40
+    const maxH = 90 // entspricht der CSS-max-height (Rest scrollt)
     const scrollH = input.scrollHeight
-    const capped = Math.max(minH, Math.min(scrollH, 5 * 20 + 24))
+    const capped = Math.max(minH, Math.min(scrollH, maxH))
     input.style.height = `${capped}px`
   }
 
@@ -355,12 +389,13 @@ function renderChips() {
   replyClose?.addEventListener('click', (e) => {
     e.stopPropagation()
     noteRow.replaceChildren()
-    reply.classList.add('hidden')
-    replyBody.replaceChildren()
     buffer = ''
-    if (inputRow.classList.contains('collapsed')) {
-      root.classList.add('hidden')
-    }
+    fadeOutReply(() => {
+      reply.classList.add('hidden')
+      if (inputRow.classList.contains('collapsed')) {
+        root.classList.add('hidden')
+      }
+    })
   })
 
   // Klick auf die fertige Antwort: Eingabezeile fuer Follow-up zurueckschieben
@@ -420,7 +455,7 @@ function renderChips() {
         // Neues Text-Segment nach Tool-Calls: alten Antwort-Text verwerfen
         buffer = ''
         userScrolledUp = false
-        replyBody.replaceChildren()
+        fadeOutReply()
         scrollReply(true)
         break
       case 'token':
@@ -450,6 +485,7 @@ function renderChips() {
           replyBody.replaceChildren(document.createTextNode('(no response received — check API key in settings)'))
         }
         scrollReply(false)
+        speakReplyIfEnabled(buffer)
         callbacks?.onTurnEnd?.(true)
         break
       }
@@ -505,13 +541,14 @@ function renderChips() {
         fileChips = []
         grants = []
         noteRow.replaceChildren()
-        replyBody.replaceChildren()
         renderChips()
-        reply.classList.add('hidden')
-        inputRow.classList.remove('collapsed', 'sending')
-        if (!streaming && reply.classList.contains('hidden')) {
-          root.classList.add('hidden')
-        }
+        fadeOutReply(() => {
+          reply.classList.add('hidden')
+          inputRow.classList.remove('collapsed', 'sending')
+          if (!streaming && reply.classList.contains('hidden')) {
+            root.classList.add('hidden')
+          }
+        })
         break
       default:
         break
@@ -523,12 +560,18 @@ function renderChips() {
   async function init() {
     const cfg = await bridge.getConfig?.()
     grants = cfg?.chat?.grants ?? []
+    voiceEnabled = !!(cfg?.audio?.voiceEnabled || cfg?.chat?.voiceAlways)
     applyBloubColor(cfg?.color)
     renderChips()
     autosizeInput()
   }
 
   void init()
+
+  // Voice-Flag aktuell halten (wird im Audio-Tab umgeschaltet)
+  bridge.onConfigChanged?.((cfg) => {
+    voiceEnabled = !!(cfg.audio?.voiceEnabled || cfg.chat?.voiceAlways)
+  })
 
   // Sichtbarkeit wird vom Main gesteuert (Hotkey/Doppelklick/Esc)
   bridge.onChatVisibility?.((visible) => {
@@ -544,6 +587,284 @@ function renderChips() {
         root.classList.add('hidden')
         input.blur()
       }
+    }
+  })
+
+  /* ----------------------------------------------- push-to-talk (mikro) */
+
+  let mediaRecorder: MediaRecorder | null = null
+  let audioChunks: BlobPart[] = []
+  let micActive = false
+  let recordingStream: MediaStream | null = null
+  let audioCtx: AudioContext | null = null
+  let analyser: AnalyserNode | null = null
+  let levelRaf = 0
+  const micLevelEl = root.querySelector('#mic-level') as HTMLElement
+  /**
+   * Race-Schutz: das PTT-Ende (Alt+X loslassen) kann kommen, BEVOR der
+   * asynchrone Start (getUserMedia, AudioContext) fertig ist — frueher wurde
+   * das Stop dann verworfen und die Aufnahme lief ewig weiter. Der Wunsch
+   * wird gemerkt und vom startenden Code sofort ausgefuehrt.
+   */
+  let stopRequested = false
+  /** Sicherheitsnetz: hakt das keyUp (Alt-Tab, Fokus-Verlust), stoppt spätestens nach 60 s. */
+  let maxDurTimer: ReturnType<typeof setTimeout> | null = null
+  let recordingStartedAt = 0
+  /** Kurzmeldungs-Timer (Mic-Row zeigt Fehler/Busy und blendet sich selbst aus). */
+  let flashTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showMic(show: boolean) {
+    micActive = show
+    micRow.classList.toggle('hidden', !show)
+    inputRow.classList.toggle('hidden', show)
+    micBtn.classList.toggle('live', show)
+    micBtn.title = show ? 'Click to stop & send' : 'Click to talk (or hold the PTT key)'
+    if (show) {
+      root.classList.remove('hidden')
+      input.blur()
+      // Kleine Barriere: Laufende Level-Animation anhalten / Level zuruecksetzen
+      if (micLevelEl) micLevelEl.style.setProperty('--lvl', '0')
+    } else {
+      stopLevelAnimation()
+      input.focus()
+    }
+  }
+
+  /**
+   * Kurze Statusmeldung im Mic-Row (Fehler, zu kurz, busy): Row einblenden,
+   * Text zeigen, nach `ms` wieder ausblenden — ohne laufende Aufnahme zu stoeren.
+   */
+  function flashMicStatus(text: string, ms = 2600) {
+    if (flashTimer) clearTimeout(flashTimer)
+    micRow.classList.remove('hidden')
+    inputRow.classList.add('hidden')
+    micBtn.classList.remove('live')
+    setMicStatus(text)
+    flashTimer = setTimeout(() => {
+      flashTimer = null
+      if ((mediaRecorder?.state ?? 'inactive') === 'inactive') {
+        micRow.classList.add('hidden')
+        inputRow.classList.remove('hidden')
+      }
+    }, ms)
+  }
+
+  function startLevelAnimation() {
+    if (!analyser || levelRaf) return
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    const tick = () => {
+      levelRaf = requestAnimationFrame(tick)
+      analyser?.getByteFrequencyData(data)
+      // Durchschnitt der oberen Bins als "Sprechpegel" (0..255), geglaettet auf 0..1
+      let sum = 0
+      const n = Math.min(data.length, 256)
+      for (let i = 0; i < n; i += 4) sum += data[i] ?? 0
+      const avg = sum / (n / 4)
+      const level = Math.min(1, avg / 140)
+      if (micLevelEl) micLevelEl.style.setProperty('--lvl', String(level.toFixed(3)))
+      // "speaking"-Klasse setzen, sobald hörbarer Pegel
+      if (micRow) micRow.classList.toggle('speaking', level > 0.08)
+    }
+    levelRaf = requestAnimationFrame(tick)
+  }
+
+  function stopLevelAnimation() {
+    if (levelRaf) cancelAnimationFrame(levelRaf)
+    levelRaf = 0
+    if (micRow) micRow.classList.remove('speaking')
+    if (micLevelEl) micLevelEl.style.setProperty('--lvl', '0')
+  }
+
+  async function startMicRecording() {
+    if (micActive) return
+    if (streaming) {
+      flashMicStatus('wait for the reply, then talk')
+      return
+    }
+    stopRequested = false
+    setMicStatus('Starting mic…')
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      flashMicStatus('mic blocked — allow microphone access')
+      return
+    }
+    // Stop-Kommando kam waehrend des async Starts (schneller Tap): Track
+    // wieder freigeben und gar nicht erst aufnehmen.
+    if (stopRequested) {
+      stream.getTracks().forEach((t) => t.stop())
+      return
+    }
+    recordingStream = stream
+    audioChunks = []
+
+    // Lautstaerke-Pegel fuer die Mikro-Animation
+    try {
+      audioCtx = new AudioContext()
+      const source = audioCtx.createMediaStreamSource(stream)
+      analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 512
+      source.connect(analyser)
+    } catch {
+      analyser = null
+    }
+
+    mediaRecorder = new MediaRecorder(stream)
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) audioChunks.push(e.data)
+    }
+    mediaRecorder.onstop = () => {
+      const elapsed = Date.now() - recordingStartedAt
+      const chunks = audioChunks
+      audioChunks = []
+      const type = mediaRecorder?.mimeType || 'audio/webm'
+      stopMicTracks()
+      if (elapsed < 600 || chunks.length === 0) {
+        // Versehentlicher Tap: nichts an die AI schicken
+        flashMicStatus('too short — hold a bit longer')
+        return
+      }
+      const blob = new Blob(chunks, { type })
+      setMicStatus('Transcribing…')
+      void sendTranscript(blob)
+    }
+    recordingStartedAt = Date.now()
+    mediaRecorder.start()
+    showMic(true)
+    startLevelAnimation()
+    setMicStatus('Listening…')
+    callbacks?.onListeningChange?.(true)
+    // Sicherheitsnetz gegen ewige Aufnahmen (verlorenes keyUp)
+    if (maxDurTimer) clearTimeout(maxDurTimer)
+    maxDurTimer = setTimeout(() => {
+      maxDurTimer = null
+      stopMicRecording()
+    }, 60000)
+    // Falls das Stop-Kommando zwischen den Zeilen kam: sofort ausfuehren
+    if (stopRequested) stopMicRecording()
+  }
+
+  function stopMicRecording() {
+    if (maxDurTimer) {
+      clearTimeout(maxDurTimer)
+      maxDurTimer = null
+    }
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      // Start laeuft noch: Stop-Wunsch merken — startMicRecording fuehrt ihn aus.
+      stopRequested = true
+      return
+    }
+    // Die Eingabezeile kommt SOFORT zurueck — Transkription laeuft im Hintergrund.
+    showMic(false)
+    callbacks?.onListeningChange?.(false)
+    mediaRecorder.stop()
+  }
+
+  function setMicStatus(text: string) {
+    if (micStatus) micStatus.textContent = text
+  }
+
+  function stopMicTracks() {
+    try {
+      audioCtx?.close?.()
+    } catch { /* ignore */ }
+    audioCtx = null
+    analyser = null
+    recordingStream?.getTracks().forEach((t) => t.stop())
+    recordingStream = null
+  }
+
+  async function sendTranscript(blob: Blob) {
+    if (!bridge.transcribeAudio) {
+      setMicStatus('transcription unavailable')
+      return
+    }
+    const dataUrl = await blobToDataUrl(blob)
+    const base64 = dataUrl.split(',')[1] ?? ''
+    try {
+      const res = await bridge.transcribeAudio({ mime: blob.type || 'audio/webm', data: base64 })
+      if (res?.ok && res.text.trim()) {
+        input.value = res.text.trim()
+        autosizeInput()
+        void send()
+      } else {
+        setMicStatus(res?.error ? `✗ ${res.error}` : 'not heard — try again')
+      }
+    } catch (err) {
+      setMicStatus(`✗ ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result))
+      r.onerror = reject
+      r.readAsDataURL(blob)
+    })
+  }
+
+  /* --------------------------------------------- tts (antwort vorlesen) */
+
+  let ttsCtx: AudioContext | null = null
+
+  function playBase64Audio(base64: string, mime?: string) {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    ttsCtx = ttsCtx || new AudioContext()
+    ttsCtx.decodeAudioData(bytes.buffer)
+      .then((buf) => {
+        const src = ttsCtx!.createBufferSource()
+        src.buffer = buf
+        src.connect(ttsCtx!.destination)
+        src.start(0)
+      })
+      .catch(() => {
+        // Fallback: als Blob/Element-URL abspielen (falls decodeAudioData scheitert)
+        try {
+          const blob = new Blob([bytes], { type: mime || 'audio/wav' })
+          const url = URL.createObjectURL(blob)
+          const el = new Audio(url)
+          el.onended = () => URL.revokeObjectURL(url)
+          void el.play()
+        } catch { /* ignore */ }
+      })
+  }
+
+  /** Liest die Antwort vor, wenn "voiceEnabled" aktiv ist. */
+  function speakReplyIfEnabled(text: string) {
+    if (!text || !bridge.speakText || !voiceEnabled) return
+    const clean = text
+      .replace(/```[\s\S]*?```/g, ' ') // code blocks entfernen
+      .replace(/[#*_`>|..\[\]()]/g, ' ') // markdown-Zeichen raus
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 1200)
+    if (!clean) return
+    void bridge.speakText(clean).then((res) => {
+      if (res?.ok && res.data) playBase64Audio(res.data, res.mime)
+    })
+  }
+
+  bridge.onPttStart?.(() => {
+    void startMicRecording()
+  })
+  bridge.onPttEnd?.(() => {
+    stopMicRecording()
+  })
+
+  /* --------------------------------------- klick auf den mikro-knopf (mute) */
+
+  /**
+   * Klick-Toggle wie bei einer Mute-Taste: erster Klick startet die Aufnahme,
+   * ein weiterer Klick "muted" — stoppt sie und schickt das Gesagte als
+   * Nachricht ab (gleicher Pfad wie das Loslassen von Alt+X).
+   */
+  micBtn.addEventListener('click', () => {
+    if (micActive || (mediaRecorder?.state ?? 'inactive') === 'recording') {
+      stopMicRecording()
+    } else {
+      void startMicRecording()
     }
   })
 }

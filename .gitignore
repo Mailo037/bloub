@@ -32,6 +32,9 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Lokale Sicherungskopien (nicht Teil der App)
+_backup_settings_old/
+
 # Temporary files
 *.tmp
 *.temp
