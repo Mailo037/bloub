@@ -1997,7 +1997,7 @@ function getDetailedSpecs() {
 
   return {
     appName: 'Bloub Pet',
-    appVersion: app.getVersion() || '1.0.2',
+    appVersion: app.getVersion() || '1.1.2',
     electronVersion: process.versions.electron,
     chromeVersion: process.versions.chrome,
     nodeVersion: process.versions.node,

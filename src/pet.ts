@@ -833,11 +833,28 @@ bridge.onCustomAnim?.((spec) => startCustomAnim(spec))
 // er nach einiger Zeit der Abwesenheit ein.
 bridge.onGlobalCursor?.((p) => {
   globalCursor = { ...p, at: performance.now() }
+  // Das Pet-Fenster ist ausserhalb seiner Controls click-through. Die globale
+  // Cursor-Position ist deshalb die verlaessliche Hit-Test-Quelle: sonst kann
+  // der erste Druck auf den Chat-/Hold-Button an Windows durchgereicht werden.
+  pointer = { x: p.x, y: p.y }
+  pointerAt = performance.now()
   lastPointerMoveTime = performance.now()
+  updateIgnore(false)
   if (mouseNearPet()) {
     if (engine) lastActivityAt = clock
     if (!dragging && engine?.state === 'sleep') playOnce('wake')
   }
+})
+
+// Beim Einblenden wird der aktuelle globale Cursor sofort gegen den neuen
+// Chat-Dock getestet. So ist der erste Hold-Press bereits interaktiv, ohne
+// dass der Nutzer erst einmal die Maus bewegen muss.
+bridge.onChatVisibility?.(() => {
+  if (globalCursor) {
+    pointer = { x: globalCursor.x, y: globalCursor.y }
+    pointerAt = performance.now()
+  }
+  updateIgnore(false)
 })
 // Chat-Dock direkt unter dem Ball mounten (gleiches Fenster wie der Bloub)
 mountChat(chatDock, {

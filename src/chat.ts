@@ -36,11 +36,20 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
     </div>
     <div id="input-row">
       <textarea id="chat-input" rows="1" placeholder="ask the bloub…" spellcheck="false"></textarea>
+      <button id="mic-hold" type="button" aria-label="Hold to talk" title="Hold to talk">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+          <path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          <path d="M12 17v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button id="send" aria-label="Send">➤</button>
     </div>
     <div id="mic-row" class="hidden">
-      <div id="mic-btn" title="Listening…">
-        <div id="mic-level"></div>
+      <div id="mic-btn" aria-hidden="true">
+        <div id="mic-level">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
         <svg id="mic-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
           <path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -60,6 +69,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   const replyBody = root.querySelector('#reply-body') as HTMLElement
   const inputRow = root.querySelector('#input-row') as HTMLElement
   const input = root.querySelector('#chat-input') as HTMLTextAreaElement
+  const micHoldBtn = root.querySelector('#mic-hold') as HTMLButtonElement
   const sendBtn = root.querySelector('#send') as HTMLButtonElement
   const micRow = root.querySelector('#mic-row') as HTMLElement
   const micBtn = root.querySelector('#mic-btn') as HTMLElement
@@ -483,6 +493,12 @@ function renderChips() {
         break
       case 'done': {
         streaming = false
+        // Eine per Sprache gestartete Nachricht darf nach der Antwort niemals
+        // den Transkriptions-Overlay zuruecklassen. Der normale Send-Flow hat
+        // die Eingabe bereits eingeklappt; daher bleibt das Dock sauber bei
+        // der Antwort, ohne das Mikrofon wieder einzublenden.
+        transcribing = false
+        hideMicStatus()
         setGlimmer(false)
         clearNotes()
         if (replyBody.classList.contains('error')) {
@@ -506,6 +522,10 @@ function renderChips() {
       }
       case 'error': {
         streaming = false
+        // Auch bei einer Provider-/Netzwerkantwort den Sprachzustand beenden,
+        // damit der Nutzer wieder direkt eine neue Eingabe machen kann.
+        transcribing = false
+        hideMicStatus()
         setGlimmer(false)
         clearNotes()
         root.classList.remove('hidden')
@@ -614,12 +634,14 @@ function renderChips() {
   let mediaRecorder: MediaRecorder | null = null
   let audioChunks: BlobPart[] = []
   let micActive = false
+  let micStarting = false
   let transcribing = false
   let recordingStream: MediaStream | null = null
   let audioCtx: AudioContext | null = null
   let analyser: AnalyserNode | null = null
   let levelRaf = 0
   const micLevelEl = root.querySelector('#mic-level') as HTMLElement
+  const micBars = Array.from(micLevelEl.querySelectorAll<HTMLElement>('span'))
   /**
    * Race-Schutz: das PTT-Ende (Alt+X loslassen) kann kommen, BEVOR der
    * asynchrone Start (getUserMedia, AudioContext) fertig ist — frueher wurde
@@ -630,20 +652,25 @@ function renderChips() {
   /** Sicherheitsnetz: hakt das keyUp (Alt-Tab, Fokus-Verlust), stoppt spätestens nach 60 s. */
   let maxDurTimer: ReturnType<typeof setTimeout> | null = null
   let recordingStartedAt = 0
+  // Zeitpunkt des echten Drueckens. Das Mikrofon kann nach dem Druecken noch
+  // kurz aufwachen; die Haltezeit darf dadurch nicht als versehentlicher Tap
+  // fehlinterpretiert werden.
+  let holdStartedAt = 0
   /** Kurzmeldungs-Timer (Mic-Row zeigt Fehler/Busy und blendet sich selbst aus). */
   let flashTimer: ReturnType<typeof setTimeout> | null = null
 
   function showMic(show: boolean) {
     micActive = show
     micRow.classList.toggle('hidden', !show)
+    micRow.classList.remove('transcribing', 'starting')
     inputRow.classList.toggle('hidden', show)
     micBtn.classList.toggle('live', show)
-    micBtn.title = show ? 'Click to stop & send' : 'Click to talk (or hold the PTT key)'
+    micHoldBtn.classList.toggle('holding', show)
+    micHoldBtn.setAttribute('aria-pressed', show ? 'true' : 'false')
     if (show) {
       root.classList.remove('hidden')
       input.blur()
-      // Kleine Barriere: Laufende Level-Animation anhalten / Level zuruecksetzen
-      if (micLevelEl) micLevelEl.style.setProperty('--lvl', '0')
+      micBtn.style.setProperty('--lvl', '0')
     } else {
       stopLevelAnimation()
       input.focus()
@@ -657,6 +684,7 @@ function renderChips() {
   function flashMicStatus(text: string, ms = 2600) {
     if (flashTimer) clearTimeout(flashTimer)
     micRow.classList.remove('hidden')
+    micRow.classList.remove('transcribing', 'starting')
     inputRow.classList.add('hidden')
     micBtn.classList.remove('live')
     setMicStatus(text)
@@ -672,7 +700,8 @@ function renderChips() {
   function showTranscriptionStatus() {
     if (flashTimer) clearTimeout(flashTimer)
     flashTimer = null
-    micRow.classList.remove('hidden', 'speaking')
+    micRow.classList.remove('hidden', 'speaking', 'starting')
+    micRow.classList.add('transcribing')
     inputRow.classList.add('hidden')
     micBtn.classList.remove('live')
     setMicStatus('Transcribing…')
@@ -682,7 +711,25 @@ function renderChips() {
     if (flashTimer) clearTimeout(flashTimer)
     flashTimer = null
     micRow.classList.add('hidden')
+    micRow.classList.remove('transcribing', 'starting')
     inputRow.classList.remove('hidden')
+  }
+
+  /** Sofortiges Feedback beim Druecken, noch bevor getUserMedia fertig ist. */
+  function showMicStarting() {
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = null
+    micActive = false
+    micRow.classList.remove('hidden', 'transcribing', 'speaking')
+    micRow.classList.add('starting')
+    inputRow.classList.add('hidden')
+    micBtn.classList.remove('live')
+    micHoldBtn.classList.add('holding')
+    micHoldBtn.setAttribute('aria-pressed', 'true')
+    root.classList.remove('hidden', 'closing')
+    input.blur()
+    micBtn.style.setProperty('--lvl', '0')
+    setMicStatus('Starting mic… keep holding')
   }
 
   function startLevelAnimation() {
@@ -697,7 +744,13 @@ function renderChips() {
       for (let i = 0; i < n; i += 4) sum += data[i] ?? 0
       const avg = sum / (n / 4)
       const level = Math.min(1, avg / 140)
-      if (micLevelEl) micLevelEl.style.setProperty('--lvl', String(level.toFixed(3)))
+      micBtn.style.setProperty('--lvl', String(level.toFixed(3)))
+      const barBins = [3, 7, 12, 20, 31]
+      for (let i = 0; i < micBars.length; i++) {
+        const raw = (data[barBins[i] ?? 3] ?? 0) / 170
+        const shaped = Math.min(1, Math.max(level * 0.42, raw))
+        micBars[i]!.style.height = `${Math.round(5 + shaped * 23)}px`
+      }
       // "speaking"-Klasse setzen, sobald hörbarer Pegel
       if (micRow) micRow.classList.toggle('speaking', level > 0.08)
     }
@@ -708,11 +761,12 @@ function renderChips() {
     if (levelRaf) cancelAnimationFrame(levelRaf)
     levelRaf = 0
     if (micRow) micRow.classList.remove('speaking')
-    if (micLevelEl) micLevelEl.style.setProperty('--lvl', '0')
+    micBtn.style.setProperty('--lvl', '0')
+    for (const bar of micBars) bar.style.height = '5px'
   }
 
   async function startMicRecording() {
-    if (micActive) return
+    if (micActive || micStarting) return
     if (transcribing) {
       flashMicStatus('still transcribing…')
       return
@@ -722,7 +776,9 @@ function renderChips() {
       return
     }
     stopRequested = false
-    setMicStatus('Starting mic…')
+    micStarting = true
+    if (!holdStartedAt) holdStartedAt = Date.now()
+    showMicStarting()
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -734,12 +790,16 @@ function renderChips() {
         }
       })
     } catch {
+      micStarting = false
+      holdStartedAt = 0
       flashMicStatus('mic blocked — allow microphone access')
       return
     }
     // Stop-Kommando kam waehrend des async Starts (schneller Tap): Track
     // wieder freigeben und gar nicht erst aufnehmen.
     if (stopRequested) {
+      micStarting = false
+      holdStartedAt = 0
       stream.getTracks().forEach((t) => t.stop())
       return
     }
@@ -762,20 +822,32 @@ function renderChips() {
       'audio/ogg;codecs=opus',
       'audio/webm'
     ].find((candidate) => MediaRecorder.isTypeSupported(candidate))
-    mediaRecorder = new MediaRecorder(stream, {
-      ...(preferredMime ? { mimeType: preferredMime } : {}),
-      audioBitsPerSecond: 64000
-    })
+    try {
+      mediaRecorder = new MediaRecorder(stream, {
+        ...(preferredMime ? { mimeType: preferredMime } : {}),
+        audioBitsPerSecond: 64000
+      })
+    } catch {
+      micStarting = false
+      holdStartedAt = 0
+      stopMicTracks()
+      flashMicStatus('microphone recording is unavailable')
+      return
+    }
     mediaRecorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) audioChunks.push(e.data)
     }
     mediaRecorder.onstop = () => {
       const elapsed = Date.now() - recordingStartedAt
+      const heldFor = Date.now() - (holdStartedAt || recordingStartedAt)
+      holdStartedAt = 0
       const chunks = audioChunks
       audioChunks = []
       const type = mediaRecorder?.mimeType || 'audio/webm'
       stopMicTracks()
-      if (elapsed < 600 || chunks.length === 0) {
+      // Akzeptiere eine bewusst gehaltene Eingabe auch dann, wenn das
+      // getUserMedia-Startup einen Teil der Aufnahmezeit beansprucht hat.
+      if (chunks.length === 0 || (elapsed < 250 && heldFor < 600)) {
         // Versehentlicher Tap: nichts an die AI schicken
         flashMicStatus('too short — hold a bit longer')
         return
@@ -786,10 +858,19 @@ function renderChips() {
       void sendTranscript(blob)
     }
     recordingStartedAt = Date.now()
-    mediaRecorder.start(250)
+    try {
+      mediaRecorder.start(250)
+    } catch {
+      micStarting = false
+      holdStartedAt = 0
+      stopMicTracks()
+      flashMicStatus('microphone recording could not start')
+      return
+    }
+    micStarting = false
     showMic(true)
     startLevelAnimation()
-    setMicStatus('Listening…')
+    setMicStatus('Listening… release to send')
     callbacks?.onListeningChange?.(true)
     // Sicherheitsnetz gegen ewige Aufnahmen (verlorenes keyUp)
     if (maxDurTimer) clearTimeout(maxDurTimer)
@@ -806,13 +887,20 @@ function renderChips() {
       clearTimeout(maxDurTimer)
       maxDurTimer = null
     }
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+    if (micStarting) {
       // Start laeuft noch: Stop-Wunsch merken — startMicRecording fuehrt ihn aus.
       stopRequested = true
+      hideMicStatus()
       return
     }
-    // Die Eingabezeile kommt SOFORT zurueck — Transkription laeuft im Hintergrund.
-    showMic(false)
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return
+    // Loslassen wechselt ohne Flackern direkt von der Live-Welle zur Transkription.
+    micActive = false
+    micBtn.classList.remove('live')
+    micHoldBtn.classList.remove('holding')
+    micHoldBtn.setAttribute('aria-pressed', 'false')
+    stopLevelAnimation()
+    showTranscriptionStatus()
     callbacks?.onListeningChange?.(false)
     mediaRecorder.stop()
   }
@@ -1074,18 +1162,69 @@ function renderChips() {
     stopMicRecording()
   })
 
-  /* --------------------------------------- klick auf den mikro-knopf (mute) */
+  /* ------------------------------------------ press-and-hold mikro-knopf */
 
-  /**
-   * Klick-Toggle wie bei einer Mute-Taste: erster Klick startet die Aufnahme,
-   * ein weiterer Klick "muted" — stoppt sie und schickt das Gesagte als
-   * Nachricht ab (gleicher Pfad wie das Loslassen von Alt+X).
-   */
-  micBtn.addEventListener('click', () => {
-    if (micActive || (mediaRecorder?.state ?? 'inactive') === 'recording') {
-      stopMicRecording()
-    } else {
-      void startMicRecording()
-    }
+  let holdPointerId: number | null = null
+  let keyboardHolding = false
+
+  function finishPointerHold(pointerId: number) {
+    if (holdPointerId !== pointerId) return
+    holdPointerId = null
+    try {
+      if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId)
+    } catch { /* pointer already gone */ }
+    stopMicRecording()
+  }
+
+  function finishKeyboardHold() {
+    if (!keyboardHolding) return
+    keyboardHolding = false
+    stopMicRecording()
+  }
+
+  function finishAnyHold() {
+    if (holdPointerId !== null) finishPointerHold(holdPointerId)
+    finishKeyboardHold()
+  }
+
+  micHoldBtn.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || e.button !== 0 || holdPointerId !== null) return
+    e.preventDefault()
+    holdPointerId = e.pointerId
+    holdStartedAt = Date.now()
+    try { root.setPointerCapture(e.pointerId) } catch { /* best effort */ }
+    void startMicRecording()
+  })
+
+  // Der Button wird waehrend der Aufnahme ausgeblendet. Deshalb das Loslassen
+  // zusaetzlich auf Fenster-Ebene abfangen: auch ausserhalb des Buttons, bei
+  // verlorener Pointer-Capture oder bei schnellem Ziehen wird die Aufnahme beendet.
+  window.addEventListener('pointerup', (e) => finishPointerHold(e.pointerId), true)
+  window.addEventListener('pointercancel', (e) => finishPointerHold(e.pointerId), true)
+  window.addEventListener('pointermove', (e) => {
+    if (holdPointerId === e.pointerId && e.buttons === 0) finishPointerHold(e.pointerId)
+  }, true)
+  root.addEventListener('lostpointercapture', (e) => finishPointerHold(e.pointerId))
+  window.addEventListener('blur', finishAnyHold)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') finishAnyHold()
+  })
+  micHoldBtn.addEventListener('contextmenu', (e) => e.preventDefault())
+
+  // Tastatur bleibt voll nutzbar: Space/Enter genauso lange halten wie den Pointer.
+  micHoldBtn.addEventListener('keydown', (e) => {
+    if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat || keyboardHolding) return
+    e.preventDefault()
+    keyboardHolding = true
+    holdStartedAt = Date.now()
+    void startMicRecording()
+  })
+  micHoldBtn.addEventListener('keyup', (e) => {
+    if ((e.key !== ' ' && e.key !== 'Enter') || !keyboardHolding) return
+    e.preventDefault()
+    finishKeyboardHold()
+  })
+  micHoldBtn.addEventListener('blur', () => {
+    finishKeyboardHold()
   })
 }

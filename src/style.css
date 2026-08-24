@@ -624,6 +624,45 @@ body.settings-open #edit {
   color: var(--color-text-dim);
 }
 
+/* Eigener Hold-to-talk-Control: bewusst kein natives Mikrofon-Widget. */
+#mic-hold {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(147, 197, 253, 0.2);
+  background: rgba(30, 41, 59, 0.82);
+  color: #a9c8ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: transform 0.14s ease, color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+#mic-hold:hover,
+#mic-hold:focus-visible {
+  color: #ffffff;
+  border-color: rgba(147, 197, 253, 0.48);
+  background: rgba(37, 99, 235, 0.38);
+  outline: none;
+  transform: scale(1.06);
+}
+
+#mic-hold:active,
+#mic-hold.holding {
+  cursor: grabbing;
+  color: #ffffff;
+  border-color: rgba(252, 165, 165, 0.65);
+  background: rgba(239, 68, 68, 0.55);
+  transform: scale(0.92);
+}
+
 /* Runder Send-Knopf in der gewaehlten Bloub-Farbe (setzt chat.ts) */
 #send {
   flex: none;
@@ -762,7 +801,14 @@ body.settings-open #edit {
   padding: 6px 0 12px;
 }
 
+/* Der Aufnahmebereich wird per Zustandsklasse gesteuert. Ohne diese explizite
+   Regel blieb er trotz `hidden` als "Transcribing…" sichtbar. */
+#mic-row.hidden {
+  display: none;
+}
+
 #mic-btn {
+  --lvl: 0;
   position: relative;
   width: 54px;
   height: 54px;
@@ -773,7 +819,7 @@ body.settings-open #edit {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  overflow: visible;
   box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
 }
 
@@ -792,25 +838,74 @@ body.settings-open #edit {
 
 #mic-level {
   position: absolute;
+  inset: 0;
   pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  /* nur anzeigen wenn Pegel > 0 spricht (aktiviert durch .speaking) */
+  opacity: 0;
+  transform: scale(0.75);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  z-index: 2;
+}
+
+#mic-level span {
+  width: 3px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0%, #bfdbfe 100%);
+  box-shadow: 0 0 7px rgba(191, 219, 254, 0.55);
+  transition: height 0.07s linear;
+}
+
+#mic-icon {
+  position: relative;
+  z-index: 1;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+#mic-btn.live #mic-level,
+#mic-row.transcribing #mic-level {
+  opacity: 1;
+  transform: scale(1);
+}
+
+#mic-btn.live #mic-icon,
+#mic-row.transcribing #mic-icon {
+  opacity: 0.1;
+  transform: scale(0.72);
 }
 
 #mic-row.speaking #mic-btn {
   background: rgba(37, 99, 235, 0.6);
 }
 
-/* Aufnahme laeuft (PTT oder Klick-Start): roter "rec"-Ton + sanfter Puls.
-   Klick stoppt und sendet — der Knopf ist damit eine Mute-/Stop-Taste. */
+/* Aufnahme laeuft: roter "rec"-Ton + pegelgesteuerte Wellenform. */
 #mic-btn.live {
   background: rgba(239, 68, 68, 0.45);
   border-color: rgba(252, 165, 165, 0.55);
   box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);
   animation: mic-live-pulse 1.6s ease-in-out infinite;
+}
+
+#mic-row.transcribing #mic-btn {
+  background: rgba(37, 99, 235, 0.42);
+  border-color: rgba(147, 197, 253, 0.5);
+  box-shadow: 0 4px 22px rgba(37, 99, 235, 0.42);
+}
+
+#mic-row.transcribing #mic-level span {
+  animation: mic-transcribing-wave 0.78s ease-in-out infinite alternate;
+}
+
+#mic-row.transcribing #mic-level span:nth-child(2),
+#mic-row.transcribing #mic-level span:nth-child(4) {
+  animation-delay: -0.26s;
+}
+
+#mic-row.transcribing #mic-level span:nth-child(3) {
+  animation-delay: -0.52s;
 }
 
 #mic-row.speaking #mic-btn.live {
@@ -824,6 +919,25 @@ body.settings-open #edit {
   }
   50% {
     box-shadow: 0 4px 26px rgba(239, 68, 68, 0.65);
+  }
+}
+
+@keyframes mic-transcribing-wave {
+  from { height: 5px; opacity: 0.45; }
+  to { height: 23px; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mic-btn.live,
+  #mic-row.transcribing #mic-level span {
+    animation: none;
+  }
+
+  #mic-level span,
+  #mic-level,
+  #mic-icon,
+  #mic-hold {
+    transition: none;
   }
 }
 
