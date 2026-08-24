@@ -12,7 +12,7 @@ import {
   type UpdateCheckResult
 } from './shared'
 
-import { createSegmented, createSwitch, confirmDialog, type SelectHandle } from './ui/kit'
+import { createSegmented, createSelect, createSwitch, confirmDialog, type SelectHandle } from './ui/kit'
 
 const bridge = getBridge()
 
@@ -1083,7 +1083,25 @@ document.getElementById('audio-model-slot')!.replaceChildren(audioModelSeg.el)
 const audioApiKeyInput = document.getElementById('audio-apikey') as HTMLInputElement
 const audioTestResult = document.getElementById('audio-test-result')!
 const audioTestBtn = document.getElementById('audio-test-btn') as HTMLButtonElement
+const audioPreviewBtn = document.getElementById('audio-preview-btn') as HTMLButtonElement
+const audioPreviewResult = document.getElementById('audio-preview-result')!
 const audioPttInput = document.getElementById('audio-ptt') as HTMLInputElement
+
+const audioVoiceSelect = createSelect({
+  options: [
+    { value: 'Achird', label: 'Achird — friendly' },
+    { value: 'Kore', label: 'Kore — firm' },
+    { value: 'Puck', label: 'Puck — upbeat' },
+    { value: 'Aoede', label: 'Aoede — breezy' },
+    { value: 'Sulafat', label: 'Sulafat — warm' },
+    { value: 'Leda', label: 'Leda — youthful' }
+  ],
+  onChange: (voice) => {
+    stopVoicePreview()
+    pushAudioConfig({ voice })
+  }
+})
+document.getElementById('audio-voice-picker-slot')!.replaceChildren(audioVoiceSelect.el)
 
 const audioVoiceSwitch = createSwitch({
   label: 'Read replies aloud',
@@ -1109,6 +1127,50 @@ audioPttInput?.addEventListener('change', () => {
   const combo = audioPttInput.value.trim()
   void bridge.setAudioPttHotkey?.(combo || null)?.then((res) => {
     audioPttInput.value = res?.activeHotkey ?? combo
+  })
+})
+
+let voicePreviewAudio: HTMLAudioElement | null = null
+let voicePreviewUrl = ''
+
+function stopVoicePreview() {
+  voicePreviewAudio?.pause()
+  voicePreviewAudio = null
+  if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl)
+  voicePreviewUrl = ''
+}
+
+audioPreviewBtn?.addEventListener('click', () => {
+  if (!bridge.previewAudioVoice) {
+    audioPreviewResult.textContent = 'not supported'
+    return
+  }
+  stopVoicePreview()
+  audioPreviewBtn.disabled = true
+  audioPreviewResult.textContent = 'Generating…'
+  void bridge.previewAudioVoice(audioVoiceSelect.getValue()).then(async (res) => {
+    audioPreviewBtn.disabled = false
+    if (!res.ok || !res.data) {
+      audioPreviewResult.textContent = `✗ ${res.error || 'failed'}`
+      return
+    }
+    const bytes = Uint8Array.from(atob(res.data), (c) => c.charCodeAt(0))
+    voicePreviewUrl = URL.createObjectURL(new Blob([bytes], { type: res.mime || 'audio/wav' }))
+    voicePreviewAudio = new Audio(voicePreviewUrl)
+    voicePreviewAudio.onended = () => {
+      stopVoicePreview()
+      audioPreviewResult.textContent = '✓ ready'
+    }
+    voicePreviewAudio.onerror = () => {
+      stopVoicePreview()
+      audioPreviewResult.textContent = '✗ playback failed'
+    }
+    audioPreviewResult.textContent = 'Playing…'
+    await voicePreviewAudio.play()
+  }).catch((err) => {
+    stopVoicePreview()
+    audioPreviewBtn.disabled = false
+    audioPreviewResult.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`
   })
 })
 
@@ -1138,6 +1200,7 @@ function syncAudioFields() {
   if (!a) return
   audioModelSeg.setValue(a.model ?? '')
   audioVoiceSwitch.setValue(!!a.voiceEnabled)
+  audioVoiceSelect.setValue(a.voice ?? 'Achird')
   if (document.activeElement !== audioApiKeyInput) {
     // Feld NICHT leeren — der eingegebene Wert bleibt sichtbar. Nur den
     // Platzhalter als Hinweis setzen, ob ein Key hinterlegt ist.

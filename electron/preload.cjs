@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld('bloubPet', {
   transcribeAudio: (payload) => ipcRenderer.invoke('audio:transcribe', payload),
   // TTS: Text in base64-Audio umwandeln
   speakText: (text) => ipcRenderer.invoke('audio:speak', text),
+  startSpeechStream: (text) => ipcRenderer.invoke('audio:speak-stream', text),
+  cancelSpeechStream: (requestId) => ipcRenderer.invoke('audio:cancel-speak', requestId),
+  previewAudioVoice: (voice) => ipcRenderer.invoke('audio:preview-voice', voice),
+  onSpeechStreamEvent: (cb) => ipcRenderer.on('audio:speak-event', (_e, payload) => cb(payload)),
   // PTT: Main signalisiert Start/Ende der Aufnahme (via before-input-event)
   onPttStart: (cb) => ipcRenderer.on('chat:ptt-start', () => cb()),
   onPttEnd: (cb) => ipcRenderer.on('chat:ptt-end', () => cb()),

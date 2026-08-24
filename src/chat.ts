@@ -24,6 +24,13 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
     <div id="chip-row"></div>
     <div id="note-row"></div>
     <div id="reply" class="hidden">
+      <button id="reply-audio" aria-label="Read answer aloud" title="Read answer aloud">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+          <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+        </svg>
+      </button>
       <button id="reply-close" aria-label="Hide answer" title="Hide answer">✕</button>
       <div id="reply-scroll"><div id="reply-body"></div></div>
     </div>
@@ -47,6 +54,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   const chipRow = root.querySelector('#chip-row') as HTMLElement
   const noteRow = root.querySelector('#note-row') as HTMLElement
   const reply = root.querySelector('#reply') as HTMLElement
+  const replyAudio = root.querySelector('#reply-audio') as HTMLButtonElement
   const replyClose = root.querySelector('#reply-close') as HTMLButtonElement | null
   const replyScroll = root.querySelector('#reply-scroll') as HTMLElement
   const replyBody = root.querySelector('#reply-body') as HTMLElement
@@ -56,6 +64,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   const micRow = root.querySelector('#mic-row') as HTMLElement
   const micBtn = root.querySelector('#mic-btn') as HTMLElement
   const micStatus = root.querySelector('#mic-status') as HTMLElement
+  replyAudio.disabled = true
 
   interface FileChip extends AttachChip {
     id: string
@@ -295,6 +304,7 @@ function renderChips() {
   function send() {
     const text = input.value.trim()
     if (!text && fileChips.length === 0) return
+    stopSpeech()
     const attachmentIds = fileChips.filter((c) => !c.note).map((c) => c.id)
     fileChips = []
     input.value = ''
@@ -308,6 +318,7 @@ function renderChips() {
     streaming = true
     userScrolledUp = false
     buffer = ''
+    replyAudio.disabled = true
     noteRow.replaceChildren()
     root.classList.remove('hidden', 'closing')
     reply.classList.remove('hidden')
@@ -322,6 +333,7 @@ function renderChips() {
   sendBtn.addEventListener('click', send)
 
   const dismissChat = () => {
+    stopSpeech()
     if (streaming) {
       bridge.abortChat?.()
       streaming = false
@@ -388,6 +400,7 @@ function renderChips() {
   // Schliessen-Knopf bei Hover ueber die Antwort
   replyClose?.addEventListener('click', (e) => {
     e.stopPropagation()
+    stopSpeech()
     noteRow.replaceChildren()
     buffer = ''
     fadeOutReply(() => {
@@ -454,6 +467,7 @@ function renderChips() {
       case 'clear':
         // Neues Text-Segment nach Tool-Calls: alten Antwort-Text verwerfen
         buffer = ''
+        stopSpeech()
         userScrolledUp = false
         fadeOutReply()
         scrollReply(true)
@@ -485,6 +499,7 @@ function renderChips() {
           replyBody.replaceChildren(document.createTextNode('(no response received — check API key in settings)'))
         }
         scrollReply(false)
+        replyAudio.disabled = !buffer.trim()
         speakReplyIfEnabled(buffer)
         callbacks?.onTurnEnd?.(true)
         break
@@ -497,6 +512,7 @@ function renderChips() {
         reply.classList.remove('hidden')
         replyBody.classList.add('error')
         replyBody.replaceChildren(document.createTextNode(ev.message || 'Error communicating with provider'))
+        replyAudio.disabled = true
         scrollReply(false)
         callbacks?.onTurnEnd?.(false)
         break
@@ -537,6 +553,7 @@ function renderChips() {
         streaming = false
         setGlimmer(false)
         buffer = ''
+        stopSpeech()
         userScrolledUp = false
         fileChips = []
         grants = []
@@ -570,7 +587,9 @@ function renderChips() {
 
   // Voice-Flag aktuell halten (wird im Audio-Tab umgeschaltet)
   bridge.onConfigChanged?.((cfg) => {
-    voiceEnabled = !!(cfg.audio?.voiceEnabled || cfg.chat?.voiceAlways)
+    const nextVoiceEnabled = !!(cfg.audio?.voiceEnabled || cfg.chat?.voiceAlways)
+    if (voiceEnabled && !nextVoiceEnabled) stopSpeech()
+    voiceEnabled = nextVoiceEnabled
   })
 
   // Sichtbarkeit wird vom Main gesteuert (Hotkey/Doppelklick/Esc)
@@ -595,6 +614,7 @@ function renderChips() {
   let mediaRecorder: MediaRecorder | null = null
   let audioChunks: BlobPart[] = []
   let micActive = false
+  let transcribing = false
   let recordingStream: MediaStream | null = null
   let audioCtx: AudioContext | null = null
   let analyser: AnalyserNode | null = null
@@ -649,6 +669,22 @@ function renderChips() {
     }, ms)
   }
 
+  function showTranscriptionStatus() {
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = null
+    micRow.classList.remove('hidden', 'speaking')
+    inputRow.classList.add('hidden')
+    micBtn.classList.remove('live')
+    setMicStatus('Transcribing…')
+  }
+
+  function hideMicStatus() {
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = null
+    micRow.classList.add('hidden')
+    inputRow.classList.remove('hidden')
+  }
+
   function startLevelAnimation() {
     if (!analyser || levelRaf) return
     const data = new Uint8Array(analyser.frequencyBinCount)
@@ -677,6 +713,10 @@ function renderChips() {
 
   async function startMicRecording() {
     if (micActive) return
+    if (transcribing) {
+      flashMicStatus('still transcribing…')
+      return
+    }
     if (streaming) {
       flashMicStatus('wait for the reply, then talk')
       return
@@ -685,7 +725,14 @@ function renderChips() {
     setMicStatus('Starting mic…')
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: { ideal: 1 },
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
     } catch {
       flashMicStatus('mic blocked — allow microphone access')
       return
@@ -710,7 +757,15 @@ function renderChips() {
       analyser = null
     }
 
-    mediaRecorder = new MediaRecorder(stream)
+    const preferredMime = [
+      'audio/webm;codecs=opus',
+      'audio/ogg;codecs=opus',
+      'audio/webm'
+    ].find((candidate) => MediaRecorder.isTypeSupported(candidate))
+    mediaRecorder = new MediaRecorder(stream, {
+      ...(preferredMime ? { mimeType: preferredMime } : {}),
+      audioBitsPerSecond: 64000
+    })
     mediaRecorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) audioChunks.push(e.data)
     }
@@ -726,11 +781,12 @@ function renderChips() {
         return
       }
       const blob = new Blob(chunks, { type })
-      setMicStatus('Transcribing…')
+      transcribing = true
+      showTranscriptionStatus()
       void sendTranscript(blob)
     }
     recordingStartedAt = Date.now()
-    mediaRecorder.start()
+    mediaRecorder.start(250)
     showMic(true)
     startLevelAnimation()
     setMicStatus('Listening…')
@@ -775,24 +831,74 @@ function renderChips() {
     recordingStream = null
   }
 
+  /** Browser-Recorder liefern meist WebM/Opus; Gemini-STT akzeptiert WAV offiziell. */
+  async function recordingToWav(blob: Blob): Promise<Blob> {
+    const decodeCtx = new AudioContext()
+    let decoded: AudioBuffer
+    try {
+      decoded = await decodeCtx.decodeAudioData(await blob.arrayBuffer())
+    } finally {
+      void decodeCtx.close()
+    }
+
+    const sampleRate = 16000
+    const frameCount = Math.max(1, Math.ceil(decoded.duration * sampleRate))
+    const offline = new OfflineAudioContext(1, frameCount, sampleRate)
+    const source = offline.createBufferSource()
+    source.buffer = decoded
+    source.connect(offline.destination)
+    source.start()
+    const mono = await offline.startRendering()
+    const samples = mono.getChannelData(0)
+    const wav = new ArrayBuffer(44 + samples.length * 2)
+    const view = new DataView(wav)
+    const writeAscii = (offset: number, value: string) => {
+      for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i))
+    }
+    writeAscii(0, 'RIFF')
+    view.setUint32(4, 36 + samples.length * 2, true)
+    writeAscii(8, 'WAVE')
+    writeAscii(12, 'fmt ')
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true)
+    view.setUint16(22, 1, true)
+    view.setUint32(24, sampleRate, true)
+    view.setUint32(28, sampleRate * 2, true)
+    view.setUint16(32, 2, true)
+    view.setUint16(34, 16, true)
+    writeAscii(36, 'data')
+    view.setUint32(40, samples.length * 2, true)
+    for (let i = 0; i < samples.length; i++) {
+      const sample = Math.max(-1, Math.min(1, samples[i] ?? 0))
+      view.setInt16(44 + i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
+    }
+    return new Blob([wav], { type: 'audio/wav' })
+  }
+
   async function sendTranscript(blob: Blob) {
     if (!bridge.transcribeAudio) {
-      setMicStatus('transcription unavailable')
+      transcribing = false
+      flashMicStatus('transcription unavailable')
       return
     }
-    const dataUrl = await blobToDataUrl(blob)
-    const base64 = dataUrl.split(',')[1] ?? ''
     try {
-      const res = await bridge.transcribeAudio({ mime: blob.type || 'audio/webm', data: base64 })
+      const wav = await recordingToWav(blob)
+      const dataUrl = await blobToDataUrl(wav)
+      const base64 = dataUrl.split(',')[1] ?? ''
+      const res = await bridge.transcribeAudio({ mime: 'audio/wav', data: base64 })
       if (res?.ok && res.text.trim()) {
+        transcribing = false
+        hideMicStatus()
         input.value = res.text.trim()
         autosizeInput()
         void send()
       } else {
-        setMicStatus(res?.error ? `✗ ${res.error}` : 'not heard — try again')
+        transcribing = false
+        flashMicStatus(res?.error ? `✗ ${res.error}` : 'not heard — try again', 4200)
       }
     } catch (err) {
-      setMicStatus(`✗ ${err instanceof Error ? err.message : String(err)}`)
+      transcribing = false
+      flashMicStatus(`✗ ${err instanceof Error ? err.message : String(err)}`, 4200)
     }
   }
 
@@ -808,43 +914,158 @@ function renderChips() {
   /* --------------------------------------------- tts (antwort vorlesen) */
 
   let ttsCtx: AudioContext | null = null
+  const ttsSources = new Set<AudioBufferSourceNode>()
+  let ttsNextStart = 0
+  let ttsRequestId = 0
+  let activeSpeechStream = ''
+  let speechStreamDone = false
+  let speechChunkQueue = Promise.resolve()
 
-  function playBase64Audio(base64: string, mime?: string) {
+  function updateAudioButton(state: 'idle' | 'loading' | 'playing', error?: string) {
+    replyAudio.classList.toggle('loading', state === 'loading')
+    replyAudio.classList.toggle('playing', state === 'playing')
+    replyAudio.title = error || (state === 'loading'
+      ? 'Preparing voice… click to cancel'
+      : state === 'playing'
+        ? 'Stop speaking'
+        : 'Read answer aloud')
+    replyAudio.setAttribute('aria-label', state === 'playing' ? 'Stop speaking' : 'Read answer aloud')
+  }
+
+  function releasePlayback() {
+    for (const source of ttsSources) {
+      try { source.stop() } catch { /* already stopped */ }
+    }
+    ttsSources.clear()
+    ttsNextStart = 0
+    speechStreamDone = false
+  }
+
+  function stopSpeech() {
+    ttsRequestId++
+    if (activeSpeechStream) void bridge.cancelSpeechStream?.(activeSpeechStream)
+    activeSpeechStream = ''
+    releasePlayback()
+    updateAudioButton('idle')
+  }
+
+  function scheduleAudioBuffer(buffer: AudioBuffer, requestId: number) {
+    if (!ttsCtx || requestId !== ttsRequestId) return
+    const source = ttsCtx.createBufferSource()
+    source.buffer = buffer
+    source.connect(ttsCtx.destination)
+    const startAt = Math.max(ttsCtx.currentTime + 0.055, ttsNextStart)
+    ttsNextStart = startAt + buffer.duration
+    ttsSources.add(source)
+    source.onended = () => {
+      ttsSources.delete(source)
+      if (speechStreamDone && ttsSources.size === 0 && requestId === ttsRequestId) {
+        activeSpeechStream = ''
+        ttsNextStart = 0
+        updateAudioButton('idle')
+      }
+    }
+    source.start(startAt)
+    updateAudioButton('playing')
+  }
+
+  async function scheduleSpeechChunk(base64: string, mime: string | undefined, requestId: number) {
+    if (requestId !== ttsRequestId) return
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
     ttsCtx = ttsCtx || new AudioContext()
-    ttsCtx.decodeAudioData(bytes.buffer)
-      .then((buf) => {
-        const src = ttsCtx!.createBufferSource()
-        src.buffer = buf
-        src.connect(ttsCtx!.destination)
-        src.start(0)
-      })
-      .catch(() => {
-        // Fallback: als Blob/Element-URL abspielen (falls decodeAudioData scheitert)
-        try {
-          const blob = new Blob([bytes], { type: mime || 'audio/wav' })
-          const url = URL.createObjectURL(blob)
-          const el = new Audio(url)
-          el.onended = () => URL.revokeObjectURL(url)
-          void el.play()
-        } catch { /* ignore */ }
-      })
+    if (ttsCtx.state === 'suspended') await ttsCtx.resume()
+    if (requestId !== ttsRequestId) return
+
+    const rawMime = String(mime || '').toLowerCase()
+    if (!rawMime.startsWith('audio/l16') && !rawMime.startsWith('audio/pcm')) {
+      const decoded = await ttsCtx.decodeAudioData(bytes.buffer.slice(0))
+      scheduleAudioBuffer(decoded, requestId)
+      return
+    }
+
+    const sampleRate = Number(rawMime.match(/rate=(\d+)/)?.[1]) || 24000
+    const channels = Number(rawMime.match(/channels=(\d+)/)?.[1]) || 1
+    const frames = Math.floor(bytes.byteLength / (2 * channels))
+    if (!frames) return
+    const audio = ttsCtx.createBuffer(channels, frames, sampleRate)
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    for (let channel = 0; channel < channels; channel++) {
+      const output = audio.getChannelData(channel)
+      for (let frame = 0; frame < frames; frame++) {
+        output[frame] = view.getInt16((frame * channels + channel) * 2, true) / 32768
+      }
+    }
+    scheduleAudioBuffer(audio, requestId)
   }
+
+  async function requestSpeech(text: string, force = false) {
+    if (!text || !bridge.startSpeechStream || (!force && !voiceEnabled)) return
+    stopSpeech()
+    const requestId = ttsRequestId
+    const clean = text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[#*_`>|~]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 6000)
+    if (!clean) return
+    updateAudioButton('loading')
+    try {
+      const res = await bridge.startSpeechStream(clean)
+      if (requestId !== ttsRequestId) {
+        if (res.requestId) void bridge.cancelSpeechStream?.(res.requestId)
+        return
+      }
+      if (!res.ok || !res.requestId) return updateAudioButton('idle', res.error || 'Voice generation failed')
+      activeSpeechStream = res.requestId
+    } catch (err) {
+      if (requestId === ttsRequestId) {
+        updateAudioButton('idle', err instanceof Error ? err.message : 'Voice generation failed')
+      }
+    }
+  }
+
+  bridge.onSpeechStreamEvent?.((event) => {
+    if (event.requestId !== activeSpeechStream) return
+    const requestId = ttsRequestId
+    if (event.type === 'chunk') {
+      speechChunkQueue = speechChunkQueue
+        .then(() => scheduleSpeechChunk(event.data, event.mime, requestId))
+        .catch(() => {
+          if (requestId === ttsRequestId) {
+            stopSpeech()
+            updateAudioButton('idle', 'Voice playback failed')
+          }
+        })
+      return
+    }
+    if (event.type === 'error') {
+      stopSpeech()
+      updateAudioButton('idle', event.error || 'Voice stream failed')
+      return
+    }
+    speechStreamDone = true
+    if (ttsSources.size === 0) {
+      activeSpeechStream = ''
+      updateAudioButton('idle')
+    }
+  })
 
   /** Liest die Antwort vor, wenn "voiceEnabled" aktiv ist. */
   function speakReplyIfEnabled(text: string) {
-    if (!text || !bridge.speakText || !voiceEnabled) return
-    const clean = text
-      .replace(/```[\s\S]*?```/g, ' ') // code blocks entfernen
-      .replace(/[#*_`>|..\[\]()]/g, ' ') // markdown-Zeichen raus
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 1200)
-    if (!clean) return
-    void bridge.speakText(clean).then((res) => {
-      if (res?.ok && res.data) playBase64Audio(res.data, res.mime)
-    })
+    void requestSpeech(text)
   }
+
+  replyAudio.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (replyAudio.classList.contains('loading') || replyAudio.classList.contains('playing')) {
+      stopSpeech()
+    } else {
+      void requestSpeech(buffer, true)
+    }
+  })
 
   bridge.onPttStart?.(() => {
     void startMicRecording()

@@ -129,11 +129,18 @@ export interface AudioConfig {
   model: string
   /** Gemini-API-Base-URL (Default: https://generativelanguage.googleapis.com/v1beta). */
   baseUrl: string
+  /** Gemini-TTS-Stimme (z. B. Achird, Kore oder Puck). */
+  voice: string
   /** Sprach-Antwort aktiv (TTS nach jeder Chat-Antwort). */
   voiceEnabled: boolean
   /** Push-to-Talk-Hotkey (z. B. 'Alt+C'). */
   pttHotkey: string
 }
+
+export type SpeechStreamEvent =
+  | { type: 'chunk'; requestId: string; data: string; mime?: string }
+  | { type: 'done'; requestId: string }
+  | { type: 'error'; requestId: string; error: string }
 
 /**
  * Globale Cursor-Position vom Main-Prozess (pollt screen.getCursorScreenPoint).
@@ -329,6 +336,10 @@ export interface PetBridge {
   transcribeAudio?(payload: { mime?: string; data: string }): Promise<{ ok: boolean; text: string; error?: string }>
   /** Text in base64-Audio umwandeln (Gemini-TTS) -> { ok, data, mime, error }. */
   speakText?(text: string): Promise<{ ok: boolean; data: string; mime?: string; error?: string }>
+  startSpeechStream?(text: string): Promise<{ ok: boolean; requestId?: string; error?: string }>
+  cancelSpeechStream?(requestId: string): Promise<boolean>
+  previewAudioVoice?(voice: string): Promise<{ ok: boolean; data: string; mime?: string; error?: string }>
+  onSpeechStreamEvent?(cb: (event: SpeechStreamEvent) => void): void
   /** Push-to-Talk: Start der Aufnahme (Alt+C gedrueckt). */
   onPttStart?(cb: () => void): void
   /** Push-to-Talk: Ende der Aufnahme (Alt+C losgelassen). */

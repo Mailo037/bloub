@@ -207,6 +207,7 @@ function loadConfig() {
     apiKeyEnc: '',
     model: 'gemini-2.5-flash-native-audio-preview-12-2025',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    voice: 'Achird',
     voiceEnabled: false,
     pttHotkey: 'Alt+X'
   }
@@ -253,7 +254,11 @@ function broadcastConfig() {
   }
 }
 
-/** Autostart beim PC-Start ueber ein Login-Item abgleichen (Win/macOS). */
+/**
+ * Autostart beim PC-Start ueber ein Login-Item abgleichen (Win/macOS).
+ * Im Dev-Modus ist process.execPath nur electron.exe. Ohne App-Pfad startet
+ * Windows dann das Electron-Infofenster statt Bloub.
+ */
 function applyAutoStart() {
   const enabled = !!config.autostart
   if (process.platform === 'linux') {
@@ -277,7 +282,12 @@ function applyAutoStart() {
     return
   }
   try {
-    app.setLoginItemSettings({ openAtLogin: enabled })
+    const options = { openAtLogin: enabled }
+    if (process.platform === 'win32') {
+      options.path = process.execPath
+      options.args = app.isPackaged ? ['--autostart'] : [app.getAppPath(), '--autostart']
+    }
+    app.setLoginItemSettings(options)
   } catch {
     /* best effort */
   }
@@ -1422,6 +1432,9 @@ ipcMain.handle('hotkey:test', (_e, combo) => {
 
 /* ------------------------------------------------------------ audio ipc */
 
+const audioSpeechStreams = new Map()
+let audioSpeechStreamSeq = 0
+
 function getAudioApiKey() {
   if (!config.audio?.apiKeyEnc) return ''
   try {
@@ -1486,6 +1499,8 @@ ipcMain.handle('audio:transcribe', async (_e, payload) => {
   } catch {
     return { ok: false, text: '', error: 'bad audio data' }
   }
+  if (!buf.length) return { ok: false, text: '', error: 'empty audio data' }
+  if (buf.length > 18 * 1024 * 1024) return { ok: false, text: '', error: 'audio is too large' }
   const result = await geminiAudio.transcribe({
     apiKey,
     baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
@@ -1504,7 +1519,66 @@ ipcMain.handle('audio:speak', async (_e, text) => {
     apiKey,
     baseUrl: a.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
     text,
-    voice: 'Kore'
+    voice: a.voice || 'Achird'
+  })
+  if (!result.ok) return { ok: false, data: '', error: result.error }
+  return { ok: true, data: result.audio.toString('base64'), mime: result.mime || 'audio/wav' }
+})
+
+// Streaming-TTS: PCM-Chunks sofort an den Renderer weiterreichen, statt auf die ganze WAV zu warten.
+ipcMain.handle('audio:speak-stream', (event, text) => {
+  const apiKey = getAudioApiKey()
+  const clean = String(text || '').trim().slice(0, 6000)
+  if (!apiKey || !clean) {
+    return { ok: false, error: apiKey ? 'empty text' : 'Gemini API key not set (Audio tab)' }
+  }
+  const requestId = `${event.sender.id}-${Date.now()}-${++audioSpeechStreamSeq}`
+  const controller = new AbortController()
+  const sender = event.sender
+  audioSpeechStreams.set(requestId, { controller, senderId: sender.id })
+
+  setImmediate(() => {
+    void geminiAudio.streamTextToSpeech({
+      apiKey,
+      baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+      text: clean,
+      voice: config.audio?.voice || 'Achird',
+      signal: controller.signal,
+      onChunk: (chunk) => {
+        if (!sender.isDestroyed() && !controller.signal.aborted) {
+          sender.send('audio:speak-event', { type: 'chunk', requestId, ...chunk })
+        }
+      }
+    }).then((result) => {
+      if (sender.isDestroyed() || controller.signal.aborted) return
+      sender.send('audio:speak-event', result.ok
+        ? { type: 'done', requestId }
+        : { type: 'error', requestId, error: result.error || 'voice stream failed' })
+    }).finally(() => {
+      audioSpeechStreams.delete(requestId)
+    })
+  })
+  return { ok: true, requestId }
+})
+
+ipcMain.handle('audio:cancel-speak', (event, requestId) => {
+  const active = audioSpeechStreams.get(String(requestId || ''))
+  if (!active || active.senderId !== event.sender.id) return false
+  active.controller.abort()
+  audioSpeechStreams.delete(String(requestId))
+  return true
+})
+
+ipcMain.handle('audio:preview-voice', async (_event, voice) => {
+  const apiKey = getAudioApiKey()
+  if (!apiKey) return { ok: false, data: '', error: 'Gemini API key not set (Audio tab)' }
+  const allowed = new Set(['Achird', 'Kore', 'Puck', 'Aoede', 'Sulafat', 'Leda'])
+  const selected = allowed.has(String(voice)) ? String(voice) : 'Achird'
+  const result = await geminiAudio.textToSpeech({
+    apiKey,
+    baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+    text: 'Hi! Ich bin Bloub. So klingt meine Stimme.',
+    voice: selected
   })
   if (!result.ok) return { ok: false, data: '', error: result.error }
   return { ok: true, data: result.audio.toString('base64'), mime: result.mime || 'audio/wav' }

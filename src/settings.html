@@ -131,6 +131,13 @@
           <div class="well-body">
             <div id="audio-voice-slot" class="toggle-slot"></div>
             <p class="hint">After a chat reply, Bloub reads it aloud with Gemini's text-to-speech (if voice replies are enabled).</p>
+            <label class="fld">Voice
+              <div id="audio-voice-picker-slot"></div>
+            </label>
+            <div class="row-between">
+              <span id="audio-preview-result" class="hint"></span>
+              <button type="button" id="audio-preview-btn" class="k-action-btn">Preview voice</button>
+            </div>
             <label class="fld">Push-to-talk hotkey <input type="text" id="audio-ptt" spellcheck="false" placeholder="Alt+X" /></label>
             <p class="hint">Hold the hotkey to talk to Bloub — the input bar turns into a microphone while held. You can also click the microphone to start/stop (click again to mute &amp; send). The hotkey applies immediately, no restart needed.</p>
           </div>
@@ -139,14 +146,14 @@
         <section class="well collapsible open">
           <h2 class="well-head"><span>Get a Gemini API key</span></h2>
           <div class="well-body">
-            <p class="hint"><b>Free tier:</b> Gemini API has a free tier that is rate-limited. It is <b>free only if you allow Google to use your data to improve their products.</b> The API key you enter decides whether you are on free or paid — paid keys are not rate-limited and your data is not used for training.</p>
+            <p class="hint"><b>Free tier:</b> Gemini TTS and Live currently have a rate-limited free tier. With free-tier keys, submitted data may be used to improve Google's products. Paid projects have higher limits and their data is not used for that purpose.</p>
             <ol class="guide-list">
               <li>Open <button type="button" class="k-link-btn" id="audio-guide-aistudio">Google AI Studio</button> and sign in with a Google account.</li>
               <li>Open the <button type="button" class="k-link-btn" id="audio-guide-pricing">Gemini API pricing page</button> and check the free tier limits for the model you picked.</li>
               <li>In AI Studio → <b>Get API key</b> → <b>Create API key</b> — copy the key.</li>
               <li>Paste it above and press <b>Test connection</b>.</li>
             </ol>
-            <p class="hint">If you are in the EU / EEA, Switzerland or the UK, Google requires a paid plan for API clients — the free tier is not available there.</p>
+            <p class="hint">The free tier is currently available in the EU / EEA, UK and Switzerland too. Your actual model quota is shown in Google AI Studio and can change over time.</p>
           </div>
         </section>
       </div>

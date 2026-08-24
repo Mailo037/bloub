@@ -328,10 +328,10 @@ body.settings-open #edit {
   display: none;
 }
 
-#reply-close {
+#reply-close,
+#reply-audio {
   position: absolute;
   top: -8px;
-  right: -2px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -354,17 +354,48 @@ body.settings-open #edit {
   -webkit-backdrop-filter: blur(12px);
 }
 
-#reply:hover #reply-close {
+#reply-close {
+  right: -2px;
+}
+
+#reply-audio {
+  right: 22px;
+}
+
+#reply:hover #reply-close,
+#reply:hover #reply-audio:not(:disabled),
+#reply-audio.playing,
+#reply-audio.loading {
   opacity: 1;
   pointer-events: auto;
   transform: scale(1);
 }
 
-#reply-close:hover {
+#reply-close:hover,
+#reply-audio:hover {
   background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.32);
   transform: scale(1.12);
+}
+
+#reply-audio:disabled {
+  display: none;
+}
+
+#reply-audio.playing {
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.55);
+  background: rgba(37, 99, 235, 0.32);
+}
+
+#reply-audio.loading svg {
+  animation: reply-audio-pulse 0.85s ease-in-out infinite alternate;
+}
+
+@keyframes reply-audio-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
 }
 
 #reply-scroll {
