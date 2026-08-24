@@ -61,8 +61,8 @@ document.getElementById('autostart-toggle-slot')!.replaceChildren(autostartSwitc
 // Globale Dateizugriffs-Stufe: none / read / readwrite
 const fileAccessSeg = createSegmented({
   options: [
-    { value: 'none', label: 'None' },
-    { value: 'read', label: 'Read' },
+    { value: 'none', label: 'No access' },
+    { value: 'read', label: 'Read files' },
     { value: 'readwrite', label: 'Read & write' }
   ],
   onChange: (value) => {
@@ -75,14 +75,22 @@ document.getElementById('file-access-slot')!.replaceChildren(fileAccessSeg.el)
 
 // Terminal-Zugriff (Opt-in): shell_exec fuer die AI
 const terminalSwitch = createSwitch({
-  label: 'Terminal access',
+  label: 'Allow terminal commands',
   onChange: (checked) => {
+    updateTerminalAccessUi(checked)
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), shellEnabled: checked }
     })
   }
 })
 document.getElementById('terminal-toggle-slot')!.replaceChildren(terminalSwitch.el)
+const terminalAccessStatus = document.getElementById('terminal-access-status')!
+
+function updateTerminalAccessUi(enabled: boolean): void {
+  terminalAccessStatus.textContent = enabled
+    ? 'Terminal commands are allowed with a 30 second limit.'
+    : 'Terminal commands are off.'
+}
 
 // Persistentes Memory (Opt-in): memory_write/memory_get fuer die AI
 const memorySwitch = createSwitch({
@@ -97,15 +105,33 @@ document.getElementById('memory-toggle-slot')!.replaceChildren(memorySwitch.el)
 
 // Voller Zugriff auf das Systemlaufwerk (C:\) — Opt-in, wird nicht automatisch gesetzt
 const driveSwitch = createSwitch({
-  label: 'Full drive access (C:\\)',
+  label: 'Allow Bloub to use C:\\',
   onChange: (checked) => {
-    // syncSystemDriveGrant im Main ergaenzt/entfernt den Root-Grant
-    void bridge.updateConfig({
-      chat: { ...(config.chat ?? {}), ...grantsInto({}), fullDriveAccess: checked }
-    })
+    setFullDriveAccess(checked)
   }
 })
 document.getElementById('drive-toggle-slot')!.replaceChildren(driveSwitch.el)
+const driveAccessBtn = document.getElementById('drive-access-btn') as HTMLButtonElement
+const driveAccessStatus = document.getElementById('drive-access-status')!
+
+function updateDriveAccessUi(enabled: boolean): void {
+  driveAccessBtn.textContent = enabled ? 'Remove C:\\ access' : 'Grant C:\\ access'
+  driveAccessStatus.textContent = enabled
+    ? 'C:\\ is granted for reading and writing.'
+    : 'C:\\ is not granted. Use the button above to add it.'
+}
+
+function setFullDriveAccess(enabled: boolean): void {
+  updateDriveAccessUi(enabled)
+  // syncSystemDriveGrant im Main ergaenzt/entfernt den Root-Grant.
+  void bridge.updateConfig({
+    chat: { ...(config?.chat ?? {}), ...grantsInto({}), fullDriveAccess: enabled }
+  })
+}
+
+driveAccessBtn.addEventListener('click', () => {
+  setFullDriveAccess(!(config?.chat?.fullDriveAccess ?? false))
+})
 
 /* ------------------------------------------- actions (was die AI darf) */
 
@@ -341,6 +367,16 @@ if (scrollContainer) {
 
 /** Aktiver Tab fuer die Suchenavigation (Modul-Ebene). */
 let currentSearchTab = 'look'
+let searchOpen = false
+
+/** Die aktive Unterstreichung folgt dem Tab, statt beim Wechsel zu springen. */
+function updateTabIndicator(): void {
+  const tabs = document.getElementById('tabs')
+  const active = tabs?.querySelector<HTMLElement>('[data-tab].on')
+  if (!tabs || !active) return
+  tabs.style.setProperty('--active-tab-left', `${active.offsetLeft}px`)
+  tabs.style.setProperty('--active-tab-width', `${active.offsetWidth}px`)
+}
 
 /** Auf einen Tab umschalten (Tab-Button und Pane sichtbar machen). */
 function switchTab(tabId: string) {
@@ -349,10 +385,12 @@ function switchTab(tabId: string) {
   currentSearchTab = tabId
   for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs [data-tab]')) {
     b.classList.toggle('on', b === btn)
+    b.setAttribute('aria-selected', String(b === btn))
   }
   for (const pane of document.querySelectorAll<HTMLElement>('.pane')) {
     pane.classList.toggle('hidden', pane.id !== `pane-${tabId}`)
   }
+  updateTabIndicator()
   scrollContainer?.scrollTo({ top: 0, behavior: 'instant' })
   requestAnimationFrame(updateScrollGradients)
 }
@@ -378,7 +416,8 @@ function closeSettingsWindow() {
 
 document.getElementById('close')!.addEventListener('click', closeSettingsWindow)
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeSettingsWindow()
+  // Escape schliesst zuerst nur eine offene Suche; erst danach das Fenster.
+  if (e.key === 'Escape' && !searchOpen) closeSettingsWindow()
 })
 document.getElementById('quit-btn')!.addEventListener('click', () => bridge.quit())
 
@@ -464,8 +503,10 @@ function syncChatFields() {
   verbositySeg.setValue(c.verbosity ?? 'balanced')
   fileAccessSeg.setValue(c.fileAccess ?? 'read')
   terminalSwitch.setValue(!!c.shellEnabled)
+  updateTerminalAccessUi(!!c.shellEnabled)
   memorySwitch.setValue(!!c.memoryEnabled)
   driveSwitch.setValue(!!c.fullDriveAccess)
+  updateDriveAccessUi(!!c.fullDriveAccess)
   autoPilotModeSeg.setValue(c.autoPilot ?? 'off')
   autoPilotIntervalSeg.setValue(String(c.autoPilotInterval ?? 60))
   autoPilotChanceSeg.setValue(String(c.autoPilotChance ?? 100))
@@ -479,35 +520,54 @@ function syncChatFields() {
 
 function renderGrants(grants: Grant[]) {
   grantsCache = grants
+  if (!grants.length) {
+    const empty = document.createElement('p')
+    empty.className = 'grant-empty'
+    empty.textContent = 'No folders or drives are currently granted.'
+    grantList.replaceChildren(empty)
+    return
+  }
   grantList.replaceChildren(
     ...grants.map((g) => {
       const chip = document.createElement('div')
       chip.className = 'grant-chip'
-      const name = document.createElement('span')
+      const copy = document.createElement('div')
+      copy.className = 'grant-copy'
+      const name = document.createElement('strong')
       name.className = 'grant-name'
       name.title = g.path
-      name.textContent = g.isRoot ? `${g.path} (full drive)` : (g.path.split(/[\\/]/).filter(Boolean).pop() ?? g.path)
-      const shield = document.createElement('button')
-      shield.className = `shield${g.allowSecrets ? ' on' : ''}`
-      shield.title = 'allow secrets (never default on)'
-      shield.appendChild(createSvgIcon('shield', 12))
-      shield.addEventListener('click', () => {
+      name.textContent = g.isRoot ? 'C:\\ drive' : (g.path.split(/[\\/]/).filter(Boolean).pop() ?? g.path)
+      const detail = document.createElement('span')
+      detail.className = 'grant-detail'
+      detail.textContent = g.isRoot ? 'Full drive access' : g.path
+      copy.append(name, detail)
+
+      const actions = document.createElement('div')
+      actions.className = 'grant-actions'
+      const sensitive = document.createElement('button')
+      sensitive.className = 'grant-action'
+      sensitive.textContent = g.allowSecrets ? 'Sensitive files: allowed' : 'Sensitive files: blocked'
+      sensitive.title = g.allowSecrets
+        ? 'Block access to sensitive files in this grant'
+        : 'Allow access to sensitive files in this grant'
+      sensitive.addEventListener('click', () => {
         void bridge.setGrantSecrets?.(g.path, !g.allowSecrets)?.then((fresh) => {
           grantsCache = fresh ?? grantsCache
           renderGrants(grantsCache)
         })
       })
-      const rm = document.createElement('button')
-      rm.className = 'shield'
-      rm.title = g.isRoot ? 'revoke full-drive access' : 'revoke grant'
-      rm.appendChild(createSvgIcon('close', 11))
-      rm.addEventListener('click', () => {
+      const remove = document.createElement('button')
+      remove.className = 'grant-action'
+      remove.textContent = g.isRoot ? 'Remove C:\\ access' : 'Remove folder'
+      remove.title = g.isRoot ? 'Remove all C:\\ drive access' : `Remove access to ${g.path}`
+      remove.addEventListener('click', () => {
         void bridge.removeGrant?.(g.path)?.then((fresh) => {
           grantsCache = fresh ?? grantsCache
           renderGrants(grantsCache)
         })
       })
-      chip.append(name, shield, rm)
+      actions.append(sensitive, remove)
+      chip.append(copy, actions)
       return chip
     })
   )
@@ -1300,9 +1360,19 @@ function setupCollapsible(): void {
     // verkabeln (zwei Toggles = kein sichtbarer Effekt).
     if (head.dataset.collapsibleBound) continue
     head.dataset.collapsibleBound = '1'
-    head.addEventListener('click', (e) => {
-      // Klicks auf inaktive Controls im Header nicht schlucken (z.B. size-val ist nur Text)
-      well.classList.toggle('open', !well.classList.contains('open'))
+    head.setAttribute('role', 'button')
+    head.tabIndex = 0
+    const toggle = () => {
+      const opens = !well.classList.contains('open')
+      well.classList.toggle('open', opens)
+      head.setAttribute('aria-expanded', String(opens))
+    }
+    head.setAttribute('aria-expanded', String(well.classList.contains('open')))
+    head.addEventListener('click', toggle)
+    head.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      toggle()
     })
   }
 }
@@ -1310,6 +1380,113 @@ function setupCollapsible(): void {
 const searchToggleBtn = document.getElementById('search-toggle')
 const searchBar = document.getElementById('search-bar')
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null
+const searchStatus = document.getElementById('search-status')
+
+/**
+ * Die Einstellungen waren historisch nur eine Folge gleich aussehender
+ * Akkordeons. Die Meta-Texte machen jede Seite zu einer eigenen,
+ * selbsterklaerenden Konfigurationsansicht, ohne IDs oder gespeicherte Werte
+ * der bestehenden Controls zu veraendern.
+ */
+const PAGE_COPY: Record<string, { title: string; description: string }> = {
+  look: {
+    title: 'Appearance',
+    description: 'Make the pet feel like yours. Every change is applied immediately.'
+  },
+  chat: {
+    title: 'Chat',
+    description: 'Connect a provider, choose how to open chat, then tune the assistant.'
+  },
+  audio: {
+    title: 'Voice',
+    description: 'Set up Gemini once, then choose how Bloub listens and responds.'
+  },
+  pet: {
+    title: 'Pet',
+    description: 'Control startup, autonomy and the permissions you want to grant.'
+  },
+  recall: {
+    title: 'Recall',
+    description: 'Choose what stays on this PC and how long it remains available.'
+  },
+  about: {
+    title: 'About',
+    description: 'Check the app, updates and the runtime behind this installation.'
+  }
+}
+
+const SECTION_COPY: Record<string, Record<string, string>> = {
+  look: {
+    Avatar: 'Expression, shape, colour and size in one place.'
+  },
+  chat: {
+    Endpoint: 'Where Bloub sends chat requests.',
+    Summon: 'A shortcut for opening chat quickly.',
+    Behavior: 'Tools, voice and saved context for each conversation.'
+  },
+  audio: {
+    'Voice engine (Gemini)': 'The provider used for listening and speaking.',
+    'Voice replies': 'Choose the voice and how you want to talk to Bloub.',
+    'Get a Gemini API key': 'A short setup guide for a separate voice key.'
+  },
+  pet: {
+    Startup: 'Make Bloub available after you sign in.',
+    Life: 'Control idle movement when the pet is left alone.',
+    Autopilot: 'Let the assistant decide when to act on its own.',
+    Actions: 'Set the assistant tools and their limits.',
+    'File access': 'Decide how much of granted folders Bloub may use.',
+    Terminal: 'Allow commands on this computer only when you trust the setup.',
+    'Screens & vision': 'Choose how screenshots and cursor context are captured.',
+    'Full drive access': 'A system-wide permission that should be enabled deliberately.',
+    Leave: 'Close the pet when you no longer need it.'
+  },
+  recall: {
+    'Activity recall': 'Local activity history is off until you enable it.',
+    'Terminal capture': 'Records completed commands, never keystrokes while typing.',
+    'Browser link': 'Control the optional browser connection.',
+    Clipboard: 'Keep recent copied text only when you explicitly opt in.',
+    Storage: 'Review local usage and decide when records expire.'
+  },
+  about: {
+    About: 'The current Bloub Pet installation.',
+    'Software Updates': 'Check, download and install a newer version.',
+    'System & Specifications': 'Useful runtime details for troubleshooting.',
+    'Resources & Links': 'Project pages and support channels.'
+  }
+}
+
+function decorateSettingsPages(): void {
+  for (const [tabId, copy] of Object.entries(PAGE_COPY)) {
+    const pane = document.getElementById(`pane-${tabId}`)
+    if (!pane) continue
+
+    if (!pane.querySelector('.pane-intro')) {
+      const intro = document.createElement('div')
+      intro.className = 'pane-intro'
+      const title = document.createElement('h2')
+      title.textContent = copy.title
+      const description = document.createElement('p')
+      description.textContent = copy.description
+      intro.append(title, description)
+      pane.prepend(intro)
+    }
+
+    for (const well of pane.querySelectorAll<HTMLElement>('.well')) {
+      const head = well.querySelector<HTMLElement>('.well-head')
+      if (!head) continue
+      const title = head.querySelector<HTMLElement>('.well-title') ?? head.querySelector<HTMLElement>('span')
+      if (!title) continue
+      title.classList.add('well-title')
+
+      const summary = SECTION_COPY[tabId]?.[title.textContent?.trim() ?? '']
+      if (!summary || head.querySelector('.well-summary')) continue
+      const summaryEl = document.createElement('span')
+      summaryEl.className = 'well-summary'
+      summaryEl.textContent = summary
+      head.append(summaryEl)
+    }
+  }
+}
 
 /** Bestimmt die durchsuchbaren Texte einer Well (Header + sichtbare Labels/Hints). */
 function wellSearchText(well: HTMLElement): string {
@@ -1326,8 +1503,6 @@ function wellSearchText(well: HTMLElement): string {
 function setupSearch(): void {
   if (!searchToggleBtn || !searchBar) return
 
-  let searchOpen = false
-
   const toggleSearch = (open: boolean) => {
     searchOpen = open
     searchBar.classList.toggle('hidden', !open)
@@ -1342,7 +1517,11 @@ function setupSearch(): void {
   searchToggleBtn.addEventListener('click', () => toggleSearch(!searchOpen))
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') toggleSearch(false)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      toggleSearch(true)
+    }
+    if (e.key === 'Escape' && searchOpen) toggleSearch(false)
   })
 
   if (searchInput) {
@@ -1354,7 +1533,7 @@ function setupSearch(): void {
       }
       // Alle Sections ueber ALLE Tabs hinweg durchsuchen und automatisch zum
       // passenden Tab springen (Treffer in anderen Tabs werden sichtbar).
-      let anyHit = false
+      let hitCount = 0
       let firstHitTab: string | null = null
       for (const well of document.querySelectorAll<HTMLElement>('.well.collapsible')) {
         const hit = wellSearchText(well).includes(q)
@@ -1362,7 +1541,7 @@ function setupSearch(): void {
         well.classList.toggle('search-hidden', !hit)
         if (hit && !well.classList.contains('open')) well.classList.add('open')
         if (hit) {
-          anyHit = true
+          hitCount++
           if (!firstHitTab) {
             const pane = well.closest<HTMLElement>('.pane')
             if (pane) firstHitTab = pane.id.replace('pane-', '')
@@ -1373,6 +1552,11 @@ function setupSearch(): void {
       if (firstHitTab && firstHitTab !== currentSearchTab) {
         switchTab(firstHitTab)
       }
+      if (searchStatus) {
+        searchStatus.textContent = hitCount
+          ? `${hitCount} section${hitCount === 1 ? '' : 's'} found — matching sections are expanded.`
+          : `No settings match “${searchInput.value.trim()}”. Try a feature, model or hotkey.`
+      }
     })
   }
 
@@ -1380,13 +1564,17 @@ function setupSearch(): void {
     for (const well of document.querySelectorAll<HTMLElement>('.well.collapsible')) {
       well.classList.remove('search-hit', 'search-hidden')
     }
+    if (searchStatus) searchStatus.textContent = 'Search every setting, guide and hotkey.'
   }
 }
 
 /* Nur EINMAL aufrufen: jeder Doppelaufruf haengt jeden Header DOPPELT an
  * einen Click-Listener — die beiden Toggles heben sich gegenseitig auf und
  * die Section laesst sich nicht mehr zusammen- oder aufklappen. */
+decorateSettingsPages()
 setupCollapsible()
 setupSearch()
+updateTabIndicator()
+window.addEventListener('resize', updateTabIndicator)
 
 

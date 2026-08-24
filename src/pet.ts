@@ -779,31 +779,33 @@ function isChatInputOpen(): boolean {
   return !!(inputRow && !inputRow.classList.contains('collapsed'))
 }
 
-/** Menuepunkt-Titel je nach Chat-Zustand: offen -> "Close input", sonst "Open input". */
+/** Menuepunkt-Titel je nach Chat-Zustand: offen -> schliessen, sonst Chat oeffnen. */
 function updateChatMenuLabel() {
   const chatLabel = menuChatBtn?.querySelector('span')
-  if (chatLabel) chatLabel.textContent = isChatInputOpen() ? 'Close input' : 'Open input'
+  if (chatLabel) chatLabel.textContent = isChatInputOpen() ? 'Close chat' : 'Chat with Bloub'
 }
 
 function showPetMenu(clientX: number, clientY: number) {
   const stage = document.getElementById('stage')!
   const stageRect = stage.getBoundingClientRect()
-  const menuWidth = 145
-  const menuHeight = 120
 
   updateChatMenuLabel()
+  // Erst sichtbar machen, damit die echte Groesse des neuen, inhaltlichen
+  // Menues gemessen werden kann. So bleibt es auch bei kuenftigen Eintraegen
+  // vollstaendig innerhalb der Stage.
+  petMenu.classList.remove('hidden')
+  const menuRect = petMenu.getBoundingClientRect()
 
   // Gewuenschte Stage-relative Position aus der Cursorposition
   const rawLeft = clientX - stageRect.left
   const rawTop = clientY - stageRect.top
 
   // Menue immer sicher innerhalb des 620x620 Stage-Containers halten (funktioniert auf jedem Monitor)
-  const left = clamp(rawLeft, 8, Math.max(8, (stageRect.width || 620) - menuWidth - 8))
-  const top = clamp(rawTop, 8, Math.max(8, (stageRect.height || 620) - menuHeight - 8))
+  const left = clamp(rawLeft, 8, Math.max(8, (stageRect.width || 620) - menuRect.width - 8))
+  const top = clamp(rawTop, 8, Math.max(8, (stageRect.height || 620) - menuRect.height - 8))
 
   petMenu.style.left = `${left}px`
   petMenu.style.top = `${top}px`
-  petMenu.classList.remove('hidden')
   updateIgnore(true)
 }
 

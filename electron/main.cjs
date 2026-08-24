@@ -99,8 +99,8 @@ app.on('second-instance', () => {
   }
 })
 
-const SETTINGS_W = 352
-const SETTINGS_H = 620
+const SETTINGS_W = 392
+const SETTINGS_H = 680
 
 /** Gemeinsame Chromeless-Flags fuer rahmenlose Fenster. */
 function overlayWindowOptions(extra) {
@@ -646,7 +646,14 @@ function showSettings() {
       y,
       width: SETTINGS_W,
       height: SETTINGS_H,
-      transparent: true,
+      // Opaquer Hintergrund: bei einer gerundeten Karte duerfen an den Ecken
+      // keine schwarzen Transparent-Flaechen des Desktop-Compositors blitzen.
+      transparent: false,
+      backgroundColor: '#0a0a0a',
+      roundedCorners: true,
+      // Windows kann die echte Fensterrundung nur mit diesem Stil sauber
+      // zeichnen. Die eigenen Resize-Zonen bleiben trotzdem erhalten.
+      thickFrame: true,
       resizable: true,
       movable: true,
       skipTaskbar: true,
@@ -1795,6 +1802,14 @@ ipcMain.handle('grants:set-secrets', (_e, grantPath, allowSecrets) => {
 })
 
 ipcMain.handle('grants:remove', (_e, grantPath) => {
+  const systemRoot = process.platform === 'win32' ? 'C:\\' : '/'
+  const samePath = (a, b) => {
+    try { return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() } catch { return a === b }
+  }
+  // Das Entfernen von C:\ muss den dazugehoerigen Schalter wirklich
+  // ausschalten. Sonst wuerde der Root-Grant beim naechsten Config-Sync
+  // unbemerkt wieder auftauchen.
+  if (samePath(grantPath, systemRoot)) config.chat.fullDriveAccess = false
   config.chat.grants = config.chat.grants.filter((x) => x.path !== grantPath)
   saveConfig()
   broadcastConfig()

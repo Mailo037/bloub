@@ -6,15 +6,11 @@
   <link rel="stylesheet" href="./settings.css" />
 </head>
 <body>
-  <!--
-    Eigenes Fenster: der ganze Hintergrund ist Drag-Region, alle Bedienelemente
-    sind no-drag. Das Acryl-Material des Fensters blurrt den Desktop dahinter.
-  -->
   <div id="card">
     <header id="head">
       <div id="head-row">
-        <span class="led"></span>
-        <h1>Bloub Pet</h1>
+        <h1>Settings</h1>
+        <span class="shortcut" aria-hidden="true">ctrl k</span>
         <button id="search-toggle" class="no-drag" title="Search settings" aria-label="Search settings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8"></circle>
@@ -25,49 +21,59 @@
       </div>
       <div id="search-bar" class="hidden">
         <input type="text" id="search-input" spellcheck="false" placeholder="Search settings…" />
+        <p id="search-status" aria-live="polite">Search every setting, guide and hotkey.</p>
       </div>
-      <nav id="tabs" class="no-drag" aria-label="Settings sections">
-        <button type="button" data-tab="look" class="on">Look</button>
-        <button type="button" data-tab="chat">Chat</button>
-        <button type="button" data-tab="audio">Audio</button>
-        <button type="button" data-tab="pet">Pet</button>
-        <button type="button" data-tab="recall">Recall</button>
-        <button type="button" data-tab="about">About</button>
+      <nav id="tabs" class="no-drag" aria-label="Settings sections" role="tablist">
+        <button type="button" data-tab="look" class="on" role="tab" aria-selected="true" aria-controls="pane-look">Appearance</button>
+        <button type="button" data-tab="chat" role="tab" aria-selected="false" aria-controls="pane-chat">Chat</button>
+        <button type="button" data-tab="audio" role="tab" aria-selected="false" aria-controls="pane-audio">Voice</button>
+        <button type="button" data-tab="pet" role="tab" aria-selected="false" aria-controls="pane-pet">Pet</button>
+        <button type="button" data-tab="recall" role="tab" aria-selected="false" aria-controls="pane-recall">Recall</button>
+        <button type="button" data-tab="about" role="tab" aria-selected="false" aria-controls="pane-about">About</button>
       </nav>
     </header>
 
     <main id="scroll">
-      <div id="pane-look" class="pane">
+      <div id="pane-look" class="pane" role="tabpanel">
         <section class="well collapsible open">
-          <h2 class="well-head"><span>Expression</span></h2>
+          <h2 class="well-head"><span class="well-title">Avatar</span></h2>
           <div class="well-body">
-            <div class="pills" id="expr-pills"></div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Shape</span></h2>
-          <div class="well-body">
-            <div class="pills" id="shape-pills"></div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Color</span></h2>
-          <div class="well-body">
-            <div id="color-row"></div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <div class="well-head"><span>Size</span></div>
-          <div class="well-body">
-            <div class="row-between tight">
-              <span id="size-val" class="size-val">200</span>
+            <div class="setting-block">
+              <div class="setting-copy">
+                <h3>Expression</h3>
+                <p>How Bloub reacts while it is on your desktop.</p>
+              </div>
+              <div class="pills" id="expr-pills"></div>
             </div>
-            <input type="range" id="size-range" min="150" max="280" step="10" />
+            <div class="setting-block">
+              <div class="setting-copy">
+                <h3>Shape</h3>
+                <p>Pick the outline that feels most like your companion.</p>
+              </div>
+              <div class="pills" id="shape-pills"></div>
+            </div>
+            <div class="setting-block">
+              <div class="setting-copy">
+                <h3>Color</h3>
+                <p>Only the pet changes color; the interface stays neutral.</p>
+              </div>
+              <div id="color-row"></div>
+            </div>
+            <div class="setting-block setting-size-block">
+              <div class="setting-copy setting-copy-inline">
+                <div>
+                  <h3>Size</h3>
+                  <p>Adjust the footprint of the pet.</p>
+                </div>
+                <output id="size-val" class="size-val">200</output>
+              </div>
+              <input type="range" id="size-range" min="150" max="280" step="10" />
+            </div>
           </div>
         </section>
       </div>
 
-      <div id="pane-chat" class="pane hidden">
+      <div id="pane-chat" class="pane hidden" role="tabpanel">
         <section class="well collapsible open">
           <h2 class="well-head"><span>Endpoint</span></h2>
           <div class="well-body">
@@ -109,7 +115,7 @@
         </section>
       </div>
 
-      <div id="pane-audio" class="pane hidden">
+      <div id="pane-audio" class="pane hidden" role="tabpanel">
         <section class="well collapsible open">
           <h2 class="well-head"><span>Voice engine (Gemini)</span></h2>
           <div class="well-body">
@@ -158,19 +164,17 @@
         </section>
       </div>
 
-      <div id="pane-pet" class="pane hidden">
+      <div id="pane-pet" class="pane hidden" role="tabpanel">
         <section class="well collapsible open">
           <h2 class="well-head"><span>Startup</span></h2>
           <div class="well-body">
             <div id="autostart-toggle-slot" class="toggle-slot"></div>
-            <p class="hint">Launch Bloub Pet automatically whenever the PC starts (login item).</p>
           </div>
         </section>
         <section class="well collapsible open">
           <h2 class="well-head"><span>Life</span></h2>
           <div class="well-body">
             <div id="events-toggle-slot" class="toggle-slot"></div>
-            <p class="hint">Idle animations while nobody is poking it.</p>
           </div>
         </section>
         <section class="well collapsible open">
@@ -208,14 +212,15 @@
           <h2 class="well-head"><span>File access</span></h2>
           <div class="well-body">
             <div id="file-access-slot" class="toggle-slot"></div>
-            <p class="hint">Global filesystem capability for granted folders. Read = list/read/search; read &amp; write additionally allows creating and editing files. "None" disables all filesystem tools.</p>
+            <p class="hint">This sets what Bloub may do inside folders you have granted: read only, read and write, or no file tools.</p>
           </div>
         </section>
         <section class="well collapsible open">
           <h2 class="well-head"><span>Terminal</span></h2>
           <div class="well-body">
             <div id="terminal-toggle-slot" class="toggle-slot"></div>
-            <p class="hint">Allow the bloub to run terminal commands on your machine. Powerful — only enable if you trust it. Commands run with a 30s timeout and output is capped.</p>
+            <p id="terminal-access-status" class="access-status">Terminal commands are off.</p>
+            <p class="hint">This is separate from file access. When enabled, commands have a 30 second limit and shortened output.</p>
           </div>
         </section>
         <section class="well collapsible open">
@@ -230,8 +235,16 @@
         <section class="well collapsible open">
           <h2 class="well-head"><span>Full drive access</span></h2>
           <div class="well-body">
+            <div class="access-callout">
+              <div class="setting-copy">
+                <h3>C: drive</h3>
+                <p>Add or remove C:\ as a permanent file grant.</p>
+              </div>
+              <button type="button" id="drive-access-btn" class="k-action-btn">Grant C:\ access</button>
+            </div>
             <div id="drive-toggle-slot" class="toggle-slot"></div>
-            <p class="hint">Grant the bloub full read (and write if enabled) access to your system drive (C:\). This adds a permanent grant for the root drive so the AI can inspect files anywhere without needing to drop a folder first.</p>
+            <p id="drive-access-status" class="access-status">C:\ is not granted.</p>
+            <p class="hint">Granting C:\ adds it to the file list with read and write access. It does not enable terminal commands; turn those on separately above.</p>
           </div>
         </section>
         <section class="well danger-well collapsible open">
@@ -242,7 +255,7 @@
         </section>
       </div>
 
-      <div id="pane-recall" class="pane hidden">
+      <div id="pane-recall" class="pane hidden" role="tabpanel">
         <section class="well collapsible open">
           <h2 class="well-head"><span>Activity recall</span></h2>
           <div class="well-body">
@@ -330,7 +343,7 @@
         </section>
       </div>
 
-      <div id="pane-about" class="pane hidden">
+      <div id="pane-about" class="pane hidden" role="tabpanel">
         <section class="well about-hero-well collapsible open">
           <h2 class="well-head"><span>About</span></h2>
           <div class="well-body">
