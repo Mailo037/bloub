@@ -12,6 +12,7 @@ import { mountChat } from './chat'
 const bridge = getBridge()
 
 const ballWrap = document.getElementById('ball-wrap')!
+const dragWrap = document.getElementById('drag-wrap')!
 const hostSvg = document.getElementById('bot') as unknown as SVGSVGElement
 const editBtn = document.getElementById('edit') as HTMLButtonElement
 const chatDock = document.getElementById('chat-dock')!
@@ -34,6 +35,10 @@ let lastInteraction = -10
 let dragging = false
 let dragMovedTotal = 0
 let lastDragScreen: { x: number; y: number } | null = null
+let dragPointerId: number | null = null
+let dragMoveFrame = 0
+let pendingDragDx = 0
+let pendingDragDy = 0
 let pointer: { x: number; y: number } | null = null
 let pointerAt = 0
 /**
@@ -337,6 +342,69 @@ let dragVy = 0
 let smoothDragVx = 0
 let smoothDragVy = 0
 let dragInertiaT = 0
+let lastDragVelocityAt = 0
+let dragVisualX = 0
+let dragVisualY = 0
+let dragVisualRot = 0
+
+/**
+ * Pointer-Events koennen deutlich schneller als der Bildaufbau eintreffen.
+ * Wir summieren sie deshalb bis zum naechsten Frame und schicken maximal eine
+ * native Fensterbewegung pro Frame an den Main-Prozess.
+ */
+function flushDragMove() {
+  if (dragMoveFrame) {
+    cancelAnimationFrame(dragMoveFrame)
+    dragMoveFrame = 0
+  }
+  const dx = pendingDragDx
+  const dy = pendingDragDy
+  pendingDragDx = 0
+  pendingDragDy = 0
+  if (dx !== 0 || dy !== 0) bridge.moveBy(dx, dy)
+}
+
+function queueDragMove(dx: number, dy: number) {
+  pendingDragDx += dx
+  pendingDragDy += dy
+  if (dragMoveFrame) return
+  dragMoveFrame = requestAnimationFrame(() => {
+    dragMoveFrame = 0
+    flushDragMove()
+  })
+}
+
+/**
+ * Die native Position bleibt direkt am Cursor; nur die Bloub selbst zieht mit
+ * wenigen Pixeln federnd hinterher. Das wirkt organisch statt verzoegert und
+ * haelt die Pointer-Capture auch bei schnellen Bewegungen stabil.
+ */
+function tickDragFollow(dt: number) {
+  const speed = Math.hypot(smoothDragVx, smoothDragVy)
+  const intensity = clamp(speed / 900, 0, 1)
+  const active = dragging || dragInertiaT > 0.001
+  const targetX = active ? clamp(-smoothDragVx * 0.016, -18, 18) : 0
+  const targetY = active ? clamp(-smoothDragVy * 0.012, -14, 14) : 0
+  const targetRot = active ? clamp(-smoothDragVx * 0.010, -9, 9) : 0
+  const followRate = dragging ? 18 : 11
+  const blend = 1 - Math.exp(-dt * followRate)
+
+  dragVisualX += (targetX - dragVisualX) * blend
+  dragVisualY += (targetY - dragVisualY) * blend
+  dragVisualRot += (targetRot - dragVisualRot) * blend
+
+  if (!active && Math.abs(dragVisualX) + Math.abs(dragVisualY) + Math.abs(dragVisualRot) < 0.03) {
+    dragVisualX = 0
+    dragVisualY = 0
+    dragVisualRot = 0
+    dragWrap.style.transform = ''
+    return
+  }
+
+  const stretch = 1 + intensity * 0.055
+  const squash = 1 - intensity * 0.04
+  dragWrap.style.transform = `translate3d(${dragVisualX.toFixed(2)}px, ${dragVisualY.toFixed(2)}px, 0) rotate(${dragVisualRot.toFixed(2)}deg) scale(${stretch.toFixed(3)}, ${squash.toFixed(3)})`
+}
 
 /* -------------------------------------------------------------- blick */
 
@@ -396,9 +464,12 @@ function tickGaze(dt: number) {
   if (dragging) {
     tickDisplayTag(null, false, null)
     // Schnelle Ansprache bei Drag
+    const velocityAge = performance.now() - lastDragVelocityAt
+    const targetVx = velocityAge < 90 ? dragVx : 0
+    const targetVy = velocityAge < 90 ? dragVy : 0
     const blendRate = 1 - Math.exp(-dt * 24)
-    smoothDragVx += (dragVx - smoothDragVx) * blendRate
-    smoothDragVy += (dragVy - smoothDragVy) * blendRate
+    smoothDragVx += (targetVx - smoothDragVx) * blendRate
+    smoothDragVy += (targetVy - smoothDragVy) * blendRate
     dragInertiaT = clamp(dragInertiaT + dt / 0.1)
 
     // Traegheit / G-Kraft: Augen driften entgegengesetzt zur Bewegung
@@ -547,7 +618,11 @@ hostSvg.addEventListener('pointerdown', (e) => {
   dragging = true
   dragMovedTotal = 0
   lastDragScreen = { x: e.screenX, y: e.screenY }
+  dragPointerId = e.pointerId
+  pendingDragDx = 0
+  pendingDragDy = 0
   lastMoveTime = performance.now()
+  lastDragVelocityAt = lastMoveTime
   lastPointerMoveTime = performance.now()
   dragVx = 0
   dragVy = 0
@@ -581,31 +656,32 @@ window.addEventListener('pointermove', (e) => {
     lastMoveTime = now
 
     if (dx !== 0 || dy !== 0) {
-      bridge.moveBy(dx, dy)
+      queueDragMove(dx, dy)
       dragMovedTotal += Math.hypot(dx, dy)
       lastDragScreen = { x: e.screenX, y: e.screenY }
 
       const instVx = dx / dt
       const instVy = dy / dt
-      const blend = Math.min(1, dt * 25)
-      smoothDragVx += (instVx - smoothDragVx) * blend
-      smoothDragVy += (instVy - smoothDragVy) * blend
+      dragVx = instVx
+      dragVy = instVy
+      lastDragVelocityAt = now
     }
   }
 
   updateIgnore(overUi)
 })
 
-window.addEventListener(
-  'pointerup',
-  (e) => {
-    if (!dragging) return
+function finishDrag(pointerId?: number) {
+    if (!dragging || (pointerId !== undefined && dragPointerId !== pointerId)) return
     try {
-      hostSvg.releasePointerCapture(e.pointerId)
+      if (dragPointerId !== null) hostSvg.releasePointerCapture(dragPointerId)
     } catch {
       /* ignore */
     }
+    flushDragMove()
     dragging = false
+    dragPointerId = null
+    lastDragScreen = null
     dragGraceUntil = clock + 1.65
     bridge.dragEnd?.()
     hostSvg.classList.remove('dragging')
@@ -618,9 +694,11 @@ window.addEventListener(
     if (wildness > 0.85 && dragMovedTotal > 150) {
       playOnce('dizzy')
     }
-  },
-  true
-)
+}
+
+window.addEventListener('pointerup', (e) => finishDrag(e.pointerId), true)
+window.addEventListener('pointercancel', (e) => finishDrag(e.pointerId), true)
+window.addEventListener('blur', () => finishDrag())
 
 // Klick (ohne Drag): Reaktion. Doppelklick: Zerplatzen UND Chat-Summon
 // (Fallback neben dem globalen Hotkey).
@@ -1007,6 +1085,7 @@ function tick(ms: number) {
 
   updateDragExpression(dt)
   tickGaze(dt)
+  tickDragFollow(dt)
   tickCustomAnim()
   bot.update(engine.sample(clock), ink())
 }

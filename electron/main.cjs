@@ -315,6 +315,7 @@ function attachPetRecoveryHandlers(petWindow) {
 
   petWindow.on('closed', () => {
     if (win !== petWindow) return
+    cancelPendingPetDragMove()
     win = null
     petTaskbar = false
     schedulePetWindowRecovery('pet window closed')
@@ -322,6 +323,7 @@ function attachPetRecoveryHandlers(petWindow) {
 
   petWindow.webContents.on('render-process-gone', (_event, details) => {
     if (win !== petWindow || isQuitting) return
+    cancelPendingPetDragMove()
     const reason = details?.reason || 'unknown renderer exit'
     runtimeIssue(`pet renderer gone (${reason}, exit ${details?.exitCode ?? 'unknown'})`)
     schedulePetRendererRecovery(reason)
@@ -1898,17 +1900,59 @@ function workAreaMiddleY() {
 
 /* ---------------------------------------------------------------- ipc */
 
-ipcMain.on('pet:moveBy', (_e, dx, dy) => {
-  if (!win || win.isDestroyed()) return
+let pendingPetDragDx = 0
+let pendingPetDragDy = 0
+let petDragFlushScheduled = false
+let petDragging = false
+
+/**
+ * Der Renderer liefert bereits pro Animationsframe zusammengefasste Deltas.
+ * Diese zweite, kleine Sicherung verhindert trotzdem mehrere native
+ * setPosition-Aufrufe in derselben Main-Process-Runde.
+ */
+function flushPendingPetDragMove() {
+  petDragFlushScheduled = false
+  const dx = pendingPetDragDx
+  const dy = pendingPetDragDy
+  pendingPetDragDx = 0
+  pendingPetDragDy = 0
+  if (!win || win.isDestroyed() || (dx === 0 && dy === 0)) return
   const [x, y] = clampToDisplays(winX + dx, winY + dy, 620, 620)
+  if (x === winX && y === winY) return
   winX = x
   winY = y
   win.setPosition(x, y)
   config.x = x
   config.y = y
+}
+
+// Ein Renderer-Absturz oder ein verstecktes Fenster kann kein dragEnd mehr
+// senden. In diesem Fall darf das Cursor-Polling nicht dauerhaft pausieren.
+function cancelPendingPetDragMove() {
+  pendingPetDragDx = 0
+  pendingPetDragDy = 0
+  petDragFlushScheduled = false
+  petDragging = false
+  lastCursorKey = ''
+}
+
+ipcMain.on('pet:moveBy', (_e, dx, dy) => {
+  const moveX = Number(dx)
+  const moveY = Number(dy)
+  if (!Number.isFinite(moveX) || !Number.isFinite(moveY)) return
+  if (moveX === 0 && moveY === 0) return
+  petDragging = true
+  pendingPetDragDx += moveX
+  pendingPetDragDy += moveY
+  if (petDragFlushScheduled) return
+  petDragFlushScheduled = true
+  setImmediate(flushPendingPetDragMove)
 })
 
 ipcMain.on('pet:dragEnd', () => {
+  flushPendingPetDragMove()
+  petDragging = false
+  lastCursorKey = ''
   if (win && !win.isDestroyed()) {
     const [actualX, actualY] = win.getPosition()
     winX = actualX
@@ -1958,6 +2002,10 @@ function startCursorPolling() {
     // der Renderer faellt automatisch auf den DOM-Zeiger zurueck.
     if (!config || config.globalCursorTracking === false) return
     if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+    // Waerend eines Drags steht der Pointer unter Capture; Cursor-Polling wuerde
+    // nur mit jeder Fensterbewegung neue IPC-Arbeit erzeugen und das Ziehen
+    // ausbremsen. Nach dem Loslassen wird lastCursorKey zurueckgesetzt.
+    if (petDragging) return
     try {
       const pt = screen.getCursorScreenPoint()
       const bounds = win.getContentBounds()
