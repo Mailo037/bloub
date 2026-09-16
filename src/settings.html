@@ -212,18 +212,18 @@
         <!-- VOICE PANE -->
         <div id="pane-audio" class="pane hidden" role="tabpanel">
           <section class="well open">
-            <h2 class="well-head"><span class="well-title">Transkription</span></h2>
+            <h2 class="well-head"><span class="well-title">Transcription</span></h2>
             <div class="well-body">
-              <div class="preference-row"><div class="setting-copy"><span>Sprache in Text</span><p>Für Diktate und Push-to-talk.</p></div><div id="transcription-provider-slot"></div></div>
+              <div class="preference-row"><div class="setting-copy"><span>Speech to text</span><p>For dictation and push-to-talk.</p></div><div id="transcription-provider-slot"></div></div>
               <div id="transcription-openai-fields" class="setting-group">
-                <label class="fld">OpenAI API-Key<input id="transcription-key" type="password" autocomplete="off" placeholder="Nicht hinterlegt" /></label>
-                <p class="hint">gpt-4o-mini-transcribe · Reines Speech-to-Text-Modell. Audio wird zur Transkription an OpenAI gesendet.</p>
+                <label class="fld">OpenAI API key<input id="transcription-key" type="password" autocomplete="off" placeholder="Not set" /></label>
+                <p class="hint">gpt-4o-mini-transcribe · A dedicated speech-to-text model. Audio is sent to OpenAI for transcription.</p>
                 <p id="transcription-key-result" class="hint" role="status"></p>
               </div>
               <div id="transcription-local-fields" class="setting-group hidden">
-                <label class="fld">Lokale Server-Adresse<input id="transcription-local-url" type="url" spellcheck="false" placeholder="http://127.0.0.1:8080/inference" /></label>
-                <p class="hint">Benötigt einen laufenden whisper.cpp-Server mit geladenem mehrsprachigem Whisper-Modell. Audio bleibt auf diesem Gerät. Für WebM-Aufnahmen den Server mit --convert starten; dafür wird FFmpeg benötigt.</p>
-                <button type="button" class="k-link-btn" id="transcription-local-guide">Whisper-Einrichtung öffnen</button>
+                <label class="fld">Local server URL<input id="transcription-local-url" type="url" spellcheck="false" placeholder="http://127.0.0.1:8080/inference" /></label>
+                <p class="hint">Requires a running whisper.cpp server with a multilingual Whisper model loaded. Audio stays on this device. For WebM recordings, start the server with --convert; this requires FFmpeg.</p>
+                <button type="button" class="k-link-btn" id="transcription-local-guide">Open Whisper setup guide</button>
               </div>
             </div>
           </section>
@@ -237,22 +237,22 @@
               </label>
 </div></section>
           <section class="well open">
-            <h2 class="well-head"><span class="well-title">Zuletzt verwendete Aufnahmen</span></h2>
+            <h2 class="well-head"><span class="well-title">Recent recordings</span></h2>
             <div class="well-body">
-              <p class="hint">Die letzten 20 Diktate werden auf diesem Gerät gespeichert. Sprachchats sind ausgenommen.</p>
+              <p class="hint">The last 20 dictations are saved on this device. Voice chats are not included.</p>
               <div id="dictation-history" aria-live="polite"></div>
             </div>
           </section>
           <section class="well collapsible open">
-            <h2 class="well-head"><span class="well-title">Live-Sprachchat</span></h2>
+            <h2 class="well-head"><span class="well-title">Live voice chat</span></h2>
             <div class="well-body">
-              <label class="fld">Anbieter und Sprachmodell
+              <label class="fld">Provider and voice model
                 <div id="audio-model-slot"></div>
               </label>
               <div class="setting-group">
-                <label class="fld" id="live-openai-key-row">OpenAI API-Key<input type="password" id="live-openai-key" autocomplete="off" placeholder="Nicht hinterlegt" /></label>
+                <label class="fld" id="live-openai-key-row">OpenAI API key<input type="password" id="live-openai-key" autocomplete="off" placeholder="Not set" /></label>
                 <p id="live-key-status" class="hint" role="status"></p>
-                <p class="hint">Gemini nutzt den Key aus Connections. Der OpenAI-Key wird auch für OpenAI-Transkription verwendet. GPT-Live 1 verwendet GPT-5.6 Luna für vertiefte Antworten. Der Live-Sprachchat führt keine lokalen Werkzeuge aus.</p>
+                <p class="hint">Gemini uses the key from Connections. The OpenAI key is also used for OpenAI transcription. GPT-Live 1 uses GPT-5.6 Luna for in-depth answers. Live voice chat does not run local tools.</p>
               </div>
             </div>
           </section>

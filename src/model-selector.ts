@@ -6,7 +6,7 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
   root.className = 'model-selector'
   const trigger = document.createElement('button')
   trigger.className = 'effort-trigger'
-  trigger.title = 'Modell und Denkaufwand · Ctrl+Shift+M'
+  trigger.title = 'Model and reasoning effort · Ctrl+Shift+M'
   trigger.setAttribute('aria-expanded', 'false')
   const popup = document.createElement('div')
   popup.className = 'model-popover hidden'
@@ -14,7 +14,7 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
   let models: Array<{ id: string; name: string; levels: string[] }> = []
   let selected = ''
   let effort = ''
-  const labels: Record<string, string> = { off: 'Sofort', minimal: 'Minimal', low: 'Niedrig', medium: 'Mittel', high: 'Hoch', xhigh: 'Sehr hoch' }
+  const labels: Record<string, string> = { off: 'Instant', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Very high' }
   const close = () => { popup.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false') }
   async function save(model: string, level: string) {
     const cfg = await bridge.getConfig()
@@ -26,16 +26,16 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
     const model = models.find(m => m.id === selected)
     const label = document.createElement('span')
     label.className = 'effort-trigger-label'
-    label.textContent = model?.levels.length ? labels[effort] || 'Denkaufwand' : model?.name || selected || 'Modell'
-    trigger.title = `${model?.name || selected || 'Modell'} · Modell und Denkaufwand · Ctrl+Shift+M`
+    label.textContent = model?.levels.length ? labels[effort] || 'Reasoning effort' : model?.name || selected || 'Model'
+    trigger.title = `${model?.name || selected || 'Model'} · Model and reasoning effort · Ctrl+Shift+M`
     trigger.replaceChildren(label, chevron())
     popup.replaceChildren()
     const heading = document.createElement('button')
     heading.className = 'model-popover-heading'
-    heading.textContent = 'Modell auswählen'
+    heading.textContent = 'Choose model'
     heading.onclick = () => render(!list)
     if (list || !model?.levels.length) {
-      heading.textContent = 'Modell auswählen'
+      heading.textContent = 'Choose model'
       popup.append(heading)
       for (const m of models) {
         const option = document.createElement('button')
@@ -48,14 +48,14 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
       const value = document.createElement('button')
       value.type = 'button'
       value.className = 'effort-value'
-      value.title = 'Modell auswählen'
+      value.title = 'Choose model'
       value.onclick = () => render(true)
       const slider = document.createElement('input')
       slider.type = 'range'; slider.min = '0'; slider.max = String(model.levels.length - 1)
       slider.step = '1'; slider.value = String(Math.max(0, model.levels.indexOf(effort)))
-      slider.setAttribute('aria-label', 'Denkaufwand')
+      slider.setAttribute('aria-label', 'Reasoning effort')
       const paint = () => {
-        const label = labels[model.levels[Number(slider.value)] || 'off'] || 'Sofort'
+        const label = labels[model.levels[Number(slider.value)] || 'off'] || 'Instant'
         value.replaceChildren(document.createTextNode(label), chevron('right'))
         slider.setAttribute('aria-valuetext', label)
         slider.style.setProperty('--progress', `${Number(slider.value) / Math.max(1, model.levels.length - 1) * 100}%`)
@@ -76,7 +76,7 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
       paint(); popup.append(value, track)
     }
   }
-  function showError() { trigger.title = 'Auswahl konnte nicht gespeichert werden'; }
+  function showError() { trigger.title = 'Could not save selection'; }
   trigger.onclick = () => { const open = popup.classList.contains('hidden'); popup.classList.toggle('hidden', !open); trigger.setAttribute('aria-expanded', String(open)); if (open) render() }
   // Rendering another view removes the clicked button. The original event path
   // still identifies this as an inside click after that DOM replacement.

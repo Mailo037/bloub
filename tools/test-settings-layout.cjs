@@ -41,6 +41,15 @@ if (process.type === 'renderer') {
     for (const key of ['grouped', 'verbosityGrouped', 'workspaceGrouped', 'emptyGrants', 'dropdownOpens']) assert.equal(result[key], true, key)
     assert(result.switches > 10)
     assert.deepEqual(errors, [], 'renderer errors')
+    const english = await win.webContents.executeJavaScript(`({
+      lang: document.documentElement.lang,
+      text: document.body.textContent,
+      labels: Array.from(document.querySelectorAll('[title], [aria-label], [placeholder]')).flatMap(el => ['title', 'aria-label', 'placeholder'].map(attr => el.getAttribute(attr) || '')).join('\\n')
+    })`)
+    assert.equal(english.lang, 'en')
+    assert.doesNotMatch(english.text, /Transkription|Sprachchat|verwendet|vertiefte|Aufnahmen|Diktate|lokalen Werkzeuge/)
+    assert.doesNotMatch(english.labels, /Suchen|Schließen|Transkription|Modell|encre|framboise|clementine|pistache|myrtille/)
+    console.log('PASS English settings text and accessibility labels')
     const screenshot = path.join(app.getPath('temp'), 'bloub-settings-grouped.png')
     fs.writeFileSync(screenshot, (await win.webContents.capturePage()).toPNG())
     for (const width of [680, 590]) {

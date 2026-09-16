@@ -463,6 +463,31 @@ export const SHAPE_LABELS: Record<string, string> = {
   argile: 'clay'
 }
 
+export const COLOR_LABELS: Record<string, string> = {
+  encre: 'ink',
+  creme: 'cream',
+  brun: 'brown',
+  rouge: 'red',
+  orange: 'orange',
+  ambre: 'amber',
+  vert: 'green',
+  turquoise: 'turquoise',
+  bleu: 'blue',
+  violet: 'violet',
+  rose: 'pink',
+  gris: 'gray',
+  aqua: 'aqua',
+  menthe: 'mint',
+  lavande: 'lavender',
+  saumon: 'salmon',
+  or: 'gold',
+  argent: 'silver',
+  cerise: 'cherry',
+  kaki: 'khaki',
+  corail: 'coral',
+  prune: 'plum'
+}
+
 const LIGHT_PAPER = '#f4f2ec'
 const DARK_PAPER = '#101014'
 

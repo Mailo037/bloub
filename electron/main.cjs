@@ -1781,7 +1781,7 @@ const audioSpeechStreams = new Map()
 const liveVoiceSessions = new Map()
 ipcMain.handle('voice:start', (event, requestId) => {
   const sender = event.sender
-  if (typeof requestId !== 'string' || requestId.length > 100) return { ok: false, error: 'Ungültige Sitzung.' }
+  if (typeof requestId !== 'string' || requestId.length > 100) return { ok: false, error: 'Invalid session.' }
   liveVoiceSessions.get(sender.id)?.session.close()
   try {
     const provider = config.audio?.liveProvider === 'openai' ? 'openai' : 'gemini'
@@ -1901,7 +1901,7 @@ ipcMain.handle('audio:download-dictation', async (event, id) => {
   const { entry, data } = dictationStore.audio(app.getPath('userData'), id)
   const ext = entry.mime.includes('wav') ? 'wav' : entry.mime.includes('ogg') ? 'ogg' : 'webm'
   const result = await require('electron').dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
-    defaultPath: 'Diktat-' + new Date(entry.createdAt).toISOString().slice(0, 10) + '.' + ext,
+    defaultPath: 'Dictation-' + new Date(entry.createdAt).toISOString().slice(0, 10) + '.' + ext,
     filters: [{ name: 'Audio', extensions: [ext] }]
   })
   if (result.canceled || !result.filePath) return false
@@ -2001,7 +2001,7 @@ ipcMain.handle('audio:preview-voice', async (_event, voice) => {
   const result = await geminiAudio.textToSpeech({
     apiKey,
     baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
-    text: 'Hi! Ich bin Bloub. So klingt meine Stimme.',
+    text: 'Hi! I am Bloub. This is what my voice sounds like.',
     voice: selected
   })
   if (!result.ok) return { ok: false, data: '', error: result.error }

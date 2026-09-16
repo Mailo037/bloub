@@ -24,7 +24,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   const bridge = getBridge()
 
   root.innerHTML = `
-    <div id="pet-chat-toolbar"><button id="pet-compose" title="Nachricht schreiben" aria-label="Nachricht schreiben"><svg viewBox="0 0 24 24"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6M16 3l5 5-9 9-5 1 1-5Z"/></svg></button><span class="pet-toolbar-divider" aria-hidden="true"></span><button id="pet-open-chat" title="Chatfenster öffnen" aria-label="Chatfenster öffnen"><svg viewBox="0 0 24 24"><path d="M4 5h16v12H9l-5 4ZM8 9h8M8 13h5"/></svg></button></div>
+    <div id="pet-chat-toolbar"><button id="pet-compose" title="Write a message" aria-label="Write a message"><svg viewBox="0 0 24 24"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6M16 3l5 5-9 9-5 1 1-5Z"/></svg></button><span class="pet-toolbar-divider" aria-hidden="true"></span><button id="pet-open-chat" title="Open chat window" aria-label="Open chat window"><svg viewBox="0 0 24 24"><path d="M4 5h16v12H9l-5 4ZM8 9h8M8 13h5"/></svg></button></div>
     <div id="chip-row"></div>
     <div id="note-row"></div>
     <div id="reply" class="hidden">
@@ -39,7 +39,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
       <div id="reply-scroll"><div id="reply-body"></div></div>
     </div>
     <div id="input-row">
-      <textarea id="chat-input" rows="1" placeholder="Nachricht an Bloub…" spellcheck="false"></textarea>
+      <textarea id="chat-input" rows="1" placeholder="Message Bloub…" spellcheck="false"></textarea>
       <button id="mic-hold" type="button" aria-label="Hold to talk" title="Hold to talk">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
@@ -47,7 +47,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
           <path d="M12 17v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
         </svg>
       </button>
-      <button id="send" aria-label="Senden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+      <button id="send" aria-label="Send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
     </div>
     <div id="mic-row" class="hidden">
       <div id="mic-btn" aria-hidden="true">
@@ -88,7 +88,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   dockContent.append(...Array.from(root.children))
   const mini = document.createElement('button')
   mini.className = 'pet-dock-mini'
-  mini.setAttribute('aria-label', 'Bloub-Steuerung öffnen')
+  mini.setAttribute('aria-label', 'Open Bloub controls')
   root.append(dockContent, mini)
   let lastTyping = 0
   let awayTimer: ReturnType<typeof setTimeout> | undefined
@@ -124,7 +124,7 @@ export function mountChat(root: HTMLElement, callbacks?: MountChatCallbacks): vo
   const back = document.createElement('button')
   back.type = 'button'
   back.className = 'pet-composer-back'
-  back.setAttribute('aria-label', 'Eingabe schließen')
+  back.setAttribute('aria-label', 'Close message input')
   back.innerHTML = '<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg>'
   inputRow.prepend(back)
   back.addEventListener('click', () => { root.classList.remove('pet-composer-open'); inputRow.classList.add('collapsed'); input.blur() })
@@ -1288,7 +1288,7 @@ function initStandaloneChat(): void {
   workingIndicator.className = 'chat-working hidden'
   workingIndicator.setAttribute('role', 'status')
   workingIndicator.setAttribute('aria-live', 'polite')
-  workingIndicator.innerHTML = '<span class="chat-working-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Bloub arbeitet …</span>'
+  workingIndicator.innerHTML = '<span class="chat-working-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Bloub is working…</span>'
   function renderWorkingIndicator() {
     const visible = !!generatingByChat.get(activeChatId) && !!workingByChat.get(activeChatId)
     workingIndicator.classList.toggle('hidden', !visible)
@@ -1461,7 +1461,7 @@ function initStandaloneChat(): void {
         item.innerHTML = `
           <div class="history-item-content">
             <span class="history-item-title">${escapeHtml(res.title)}</span>
-            <span class="history-item-meta">${escapeHtml(res.snippet || 'Treffer')}</span>
+            <span class="history-item-meta">${escapeHtml(res.snippet || 'Match')}</span>
           </div>
         `
         item.addEventListener('click', () => {
@@ -1484,10 +1484,10 @@ function initStandaloneChat(): void {
           ${snippet ? `<span class="history-item-meta">${escapeHtml(snippet)}</span>` : ''}
         </div>
         <div class="history-item-actions">
-          <button class="item-action-btn more" title="Chat verwalten" aria-label="Chat verwalten" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
+          <button class="item-action-btn more" title="Manage chat" aria-label="Manage chat" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
           <div class="history-action-menu hidden">
-            <button class="item-action-btn regen-title">Titel neu generieren</button>
-            <button class="item-action-btn archive">Archivieren</button>
+            <button class="item-action-btn regen-title">Regenerate title</button>
+            <button class="item-action-btn archive">Archive</button>
           </div>
         </div>
       `
@@ -1549,9 +1549,9 @@ function initStandaloneChat(): void {
         const today = new Date()
         const yesterday = new Date(today)
         yesterday.setDate(today.getDate() - 1)
-        const dateLabel = date.toDateString() === today.toDateString() ? 'Heute'
-          : date.toDateString() === yesterday.toDateString() ? 'Gestern'
-          : date.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
+        const dateLabel = date.toDateString() === today.toDateString() ? 'Today'
+          : date.toDateString() === yesterday.toDateString() ? 'Yesterday'
+          : date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
         const chip = document.createElement('button')
         chip.type = 'button'
         chip.className = 'recent-chat-chip'
@@ -1657,7 +1657,8 @@ function initStandaloneChat(): void {
     stopIcon?.classList.toggle('hidden', !generating)
     standaloneSendBtn?.classList.toggle('stop', generating)
     if (standaloneSendBtn) {
-      standaloneSendBtn.title = generating ? 'Abbrechen' : 'Senden'
+      standaloneSendBtn.title = generating ? 'Stop generating' : 'Send'
+      standaloneSendBtn.setAttribute('aria-label', standaloneSendBtn.title)
     }
   }
 
@@ -1712,7 +1713,7 @@ function initStandaloneChat(): void {
         setGenerating(false)
         const errNotice = document.createElement('div')
         errNotice.className = 'error-notice'
-        errNotice.textContent = `Fehler beim Senden: ${err instanceof Error ? err.message : String(err)}`
+        errNotice.textContent = `Failed to send: ${err instanceof Error ? err.message : String(err)}`
         activeAssistantBubble?.appendChild(errNotice)
       }
     }
@@ -1800,7 +1801,7 @@ function initStandaloneChat(): void {
         if (activeAssistantBubble) {
           const errNotice = document.createElement('div')
           errNotice.className = 'error-notice'
-          errNotice.textContent = `Fehler: ${ev.message}`
+          errNotice.textContent = `Error: ${ev.message}`
           activeAssistantBubble.appendChild(errNotice)
         }
       }

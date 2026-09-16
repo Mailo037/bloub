@@ -4,7 +4,7 @@ export function initLiveVoice(root: HTMLElement, button: HTMLButtonElement, onAc
   const bridge = getBridge()
   const panel = document.createElement('div')
   panel.className = 'live-voice-panel hidden'
-  panel.innerHTML = '<div class="voice-orb-space"><span class="voice-orb"></span></div><div class="live-voice-status" role="status">Verbinden…</div><div class="live-voice-controls"><button class="voice-mute" aria-label="Mikrofon stummschalten">Stumm</button><button class="voice-end" aria-label="Sprachchat beenden">Beenden</button></div>'
+  panel.innerHTML = '<div class="voice-orb-space"><span class="voice-orb"></span></div><div class="live-voice-status" role="status">Connecting…</div><div class="live-voice-controls"><button class="voice-mute" aria-label="Mute microphone">Mute</button><button class="voice-end" aria-label="End voice chat">End</button></div>'
   root.append(panel)
   const dot = panel.querySelector<HTMLElement>('.voice-orb')!
   const status = panel.querySelector<HTMLElement>('.live-voice-status')!
@@ -31,9 +31,9 @@ export function initLiveVoice(root: HTMLElement, button: HTMLButtonElement, onAc
   }
   const unsubscribe = bridge.onLiveVoice?.(event => {
     if (!id || event.requestId !== id) return
-    if (event.type === 'error') { stop(event.error || 'Sprachverbindung fehlgeschlagen.'); return }
+    if (event.type === 'error') { stop(event.error || 'Voice connection failed.'); return }
     if (event.type === 'closed') { stop(); return }
-    if (event.type === 'ready') { ready = true; panel.dataset.state = 'listening'; status.textContent = 'Ich höre zu'; return }
+    if (event.type === 'ready') { ready = true; panel.dataset.state = 'listening'; status.textContent = 'Listening'; return }
     if (event.type === 'interrupted') { clearPlayback(); return }
     if (event.type === 'audio' && event.data && context) {
       const bytes = Uint8Array.from(atob(event.data), c => c.charCodeAt(0))
@@ -42,7 +42,7 @@ export function initLiveVoice(root: HTMLElement, button: HTMLButtonElement, onAc
       const buffer = context.createBuffer(1, bytes.length / 2, event.sampleRate || 24000)
       const samples = buffer.getChannelData(0)
       for (let i = 0; i < samples.length; i++) samples[i] = data.getInt16(i * 2, true) / 32768
-      if (nextAudio - context.currentTime > 15) { stop('Audiowiedergabe kommt nicht hinterher. Bitte erneut verbinden.'); return }
+      if (nextAudio - context.currentTime > 15) { stop('Audio playback is falling behind. Please reconnect.'); return }
       const source = context.createBufferSource(); source.buffer = buffer
       source.connect(outputAnalyser!); playing.add(source)
       source.onended = () => { playing.delete(source); source.disconnect() }
@@ -54,11 +54,11 @@ export function initLiveVoice(root: HTMLElement, button: HTMLButtonElement, onAc
   async function start() {
     if (id) { stop(); return }
     id = crypto.randomUUID(); const requestId = id
-    panel.classList.remove('hidden'); panel.dataset.state = 'connecting'; status.textContent = 'Verbinden…'
+    panel.classList.remove('hidden'); panel.dataset.state = 'connecting'; status.textContent = 'Connecting…'
     root.classList.add('voice-active'); root.classList.remove('pet-compact')
     root.querySelector<HTMLElement>('.pet-dock-content')!.inert = false
     button.classList.add('holding'); button.setAttribute('aria-pressed', 'true')
-    muted = false; mute.disabled = false; mute.textContent = 'Stumm'; mute.setAttribute('aria-pressed', 'false')
+    muted = false; mute.disabled = false; mute.textContent = 'Mute'; mute.setAttribute('aria-pressed', 'false')
     try {
       const cfg = await bridge.getConfig()
       if (id !== requestId) return
@@ -83,7 +83,7 @@ export function initLiveVoice(root: HTMLElement, button: HTMLButtonElement, onAc
       onActive(true)
       const result = await bridge.startLiveVoice?.(id)
       if (id !== requestId) return
-      if (!result?.ok) throw new Error(result?.error || 'Sprachmodus nicht verfügbar.')
+      if (!result?.ok) throw new Error(result?.error || 'Voice mode unavailable.')
       const values = new Float32Array(outputAnalyser.fftSize)
       function draw() {
         if (!id || !outputAnalyser) return
@@ -91,16 +91,16 @@ export function initLiveVoice(root: HTMLElement, button: HTMLButtonElement, onAc
         const output = Math.sqrt(values.reduce((sum, v) => sum + v * v, 0) / values.length)
         smoothLevel += (Math.min(1, Math.max(inputLevel, output) * 7) - smoothLevel) * .22
         dot.style.setProperty('--voice-level', String(smoothLevel))
-        if (ready) { panel.dataset.state = playing.size ? 'speaking' : 'listening'; status.textContent = playing.size ? 'Bloub spricht' : muted ? 'Mikrofon stumm' : 'Ich höre zu' }
+        if (ready) { panel.dataset.state = playing.size ? 'speaking' : 'listening'; status.textContent = playing.size ? 'Bloub is speaking' : muted ? 'Microphone muted' : 'Listening' }
         frame = requestAnimationFrame(draw)
       }
       draw()
-    } catch (error) { if (id === requestId) stop(error instanceof Error ? error.message : 'Mikrofon nicht verfügbar.') }
+    } catch (error) { if (id === requestId) stop(error instanceof Error ? error.message : 'Microphone unavailable.') }
   }
   button.addEventListener('click', () => void start())
-  button.title = 'Sprachchat starten'; button.setAttribute('aria-label', 'Sprachchat starten')
+  button.title = 'Start voice chat'; button.setAttribute('aria-label', 'Start voice chat')
   button.innerHTML = '<span class="voice-launch-dot"></span>'
-  mute.onclick = () => { muted = !muted; mute.textContent = muted ? 'Aktivieren' : 'Stumm'; mute.setAttribute('aria-pressed', String(muted)); stream?.getAudioTracks().forEach(t => { t.enabled = !muted }) }
+  mute.onclick = () => { muted = !muted; mute.textContent = muted ? 'Unmute' : 'Mute'; mute.setAttribute('aria-pressed', String(muted)); stream?.getAudioTracks().forEach(t => { t.enabled = !muted }) }
   panel.querySelector<HTMLButtonElement>('.voice-end')!.onclick = () => stop()
   window.addEventListener('beforeunload', () => { stop(); unsubscribe?.() })
   return { stop, get active() { return !!id } }

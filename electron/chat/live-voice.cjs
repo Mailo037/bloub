@@ -2,7 +2,7 @@ const WebSocket = require('ws')
 
 function connectVoice({ provider, apiKey, emit }) {
   const openai = provider === 'openai'
-  if (!apiKey) throw new Error(`${openai ? 'OpenAI' : 'Gemini'} API-Key unter Voice hinterlegen.`)
+  if (!apiKey) throw new Error(`${openai ? 'OpenAI' : 'Gemini'} API key is required. Add it under Voice.`)
   const socket = new WebSocket(openai ? 'wss://api.openai.com/v1/live/sessions' :
     'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent', {
     headers: openai ? { Authorization: `Bearer ${apiKey}` } : { 'x-goog-api-key': apiKey },
@@ -10,9 +10,9 @@ function connectVoice({ provider, apiKey, emit }) {
   })
   let ready = false, closing = false, closeTimer
   const send = data => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)) }
-  const startupTimer = setTimeout(() => { emit({ type: 'error', error: 'Sprachverbindung hat zu lange gebraucht.' }); socket.terminate() }, 20000)
+  const startupTimer = setTimeout(() => { emit({ type: 'error', error: 'Voice connection timed out.' }); socket.terminate() }, 20000)
   socket.on('open', () => {
-    const instructions = 'Du bist Bloub, ein freundlicher Desktop-Begleiter. Antworte kurz und natürlich in der Sprache des Nutzers. Behaupte keine Aktionen auf dem Computer auszuführen.'
+    const instructions = 'You are Bloub, a friendly desktop companion. Reply briefly and naturally in the language of the user. Do not claim to perform actions on the computer.'
     send(openai ? { type: 'session.start', session: {
       model: 'gpt-live-1', instructions,
       audio: { format: { type: 'audio/pcm', rate: 24000 }, output: { voice: 'marin' } },
@@ -28,7 +28,7 @@ function connectVoice({ provider, apiKey, emit }) {
     try {
       const event = JSON.parse(raw.toString())
       if (event.error || event.type === 'error') {
-        emit({ type: 'error', error: event.error?.message || 'Sprachdienst meldet einen Fehler.' })
+        emit({ type: 'error', error: event.error?.message || 'The voice service reported an error.' })
         socket.close(); return
       }
       if (event.setupComplete || event.type === 'session.started') {
@@ -41,14 +41,14 @@ function connectVoice({ provider, apiKey, emit }) {
       for (const part of content?.modelTurn?.parts || []) {
         if (part.inlineData?.data) emit({ type: 'audio', data: part.inlineData.data, sampleRate: Number(part.inlineData.mimeType?.match(/rate=(\d+)/)?.[1]) || 24000 })
       }
-    } catch { emit({ type: 'error', error: 'Ungültige Antwort des Sprachdienstes.' }); socket.close() }
+    } catch { emit({ type: 'error', error: 'Invalid response from the voice service.' }); socket.close() }
   })
-  socket.on('error', () => emit({ type: 'error', error: 'Sprachverbindung fehlgeschlagen. API-Key, Modellzugriff und Netzwerk prüfen.' }))
+  socket.on('error', () => emit({ type: 'error', error: 'Voice connection failed. Check your API key, model access and network.' }))
   socket.on('close', () => { clearTimeout(startupTimer); clearTimeout(closeTimer); emit({ type: 'closed' }) })
   return {
     audio(data) {
       if (!ready || closing || typeof data !== 'string' || data.length > 64000) return
-      if (socket.bufferedAmount > 256000) { emit({ type: 'error', error: 'Sprachverbindung ist zu langsam.' }); socket.terminate(); return }
+      if (socket.bufferedAmount > 256000) { emit({ type: 'error', error: 'Voice connection is too slow.' }); socket.terminate(); return }
       send(openai ? { type: 'session.input_audio.append', audio: data } : { realtimeInput: { audio: { data, mimeType: 'audio/pcm;rate=16000' } } })
     },
     close() {

@@ -27,11 +27,19 @@ async function run() {
   await delay(300)
   const evaluate = js => chat.webContents.executeJavaScript(js)
   const visible = () => evaluate('!!document.querySelector(".chat-working:not(.hidden)")')
+  assert.equal(await evaluate('document.documentElement.lang'), 'en')
+  assert.equal(await evaluate('document.querySelector("#new-chat-btn").title'), 'New chat')
+  assert.equal(await evaluate('document.querySelector("#win-close").title'), 'Close')
+  assert.equal(await evaluate('document.querySelector("#standalone-send-btn").title'), 'Send')
+  const labels = await evaluate(`Array.from(document.querySelectorAll('[title], [aria-label], [placeholder]')).flatMap(el => ['title', 'aria-label', 'placeholder'].map(attr => el.getAttribute(attr) || '')).join('\\n')`)
+  assert.doesNotMatch(labels, /Neuer|Schließen|Senden|Abbrechen|Verlauf|Nachricht|Modell|Anhängen|Sprache/)
+  console.log('PASS English chat labels and accessibility text')
   async function send() {
     turn = null
     await evaluate(`(() => { const i = document.querySelector('#standalone-input'); i.value = 'test'; i.dispatchEvent(new Event('input')); document.querySelector('#standalone-send-btn').click() })()`)
     await waitFor(() => turn)
     await waitFor(visible)
+    assert.equal(await evaluate('document.querySelector("#standalone-send-btn").title'), 'Stop generating')
   }
   await send()
   const screenshot = path.join(os.tmpdir(), 'bloub-chat-working.png')

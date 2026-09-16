@@ -11,6 +11,8 @@ async function main() {
   try {
     const audio = { audioBuffer: Buffer.from('test audio'), mime: 'audio/webm' }
     assert.equal((await transcribe(audio)).ok, false)
+    assert.equal((await transcribe(audio)).error, 'Enter your OpenAI API key under Voice → Transcription.')
+    assert.equal((await transcribe({ ...audio, provider: 'unknown' })).error, 'Unknown transcription provider.')
     assert.equal(requests.length, 0)
     assert.deepEqual(await transcribe({ ...audio, apiKey: 'test-key' }), { ok: true, text: 'Guten Tag.' })
     assert.equal(requests[0].url, 'https://api.openai.com/v1/audio/transcriptions')
@@ -27,7 +29,7 @@ async function main() {
     global.fetch = async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'Invalid key' } }) })
     assert.equal((await transcribe({ ...audio, apiKey: 'invalid' })).error, 'Invalid key')
     global.fetch = async () => { throw new TypeError('fetch failed') }
-    assert.match((await transcribe({ ...audio, provider: 'whisper-local' })).error, /Whisper ist nicht erreichbar/)
+    assert.match((await transcribe({ ...audio, provider: 'whisper-local' })).error, /Whisper is unreachable/)
     console.log('Transcription request routing, payload, credential separation and error handling passed.')
   } finally { global.fetch = originalFetch }
 }

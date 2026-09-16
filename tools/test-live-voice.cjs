@@ -13,7 +13,7 @@ class FakeSocket extends EventEmitter {
 const scope = { require: () => FakeSocket, module: { exports: {} }, setTimeout, clearTimeout }
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/chat/live-voice.cjs'), 'utf8'), scope)
 const { connectVoice } = scope.module.exports
-assert.throws(() => connectVoice({ provider: 'openai' }), /OpenAI API-Key/)
+assert.throws(() => connectVoice({ provider: 'openai' }), /OpenAI API key/)
 for (const provider of ['openai', 'gemini']) {
   const events = []
   const session = connectVoice({ provider, apiKey: 'test-secret', emit: event => events.push(event) })

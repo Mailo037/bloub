@@ -48,8 +48,8 @@ export function createSelect(cfg: {
   const search = document.createElement('input')
   search.type = 'search'
   search.className = 'k-select-search'
-  search.placeholder = 'Suchen…'
-  search.setAttribute('aria-label', 'Optionen suchen')
+  search.placeholder = 'Search…'
+  search.setAttribute('aria-label', 'Search options')
   const list = document.createElement('ul')
   list.className = 'k-select-options'
   list.setAttribute('role', 'listbox')

@@ -18,7 +18,7 @@
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
-        <button id="new-chat-btn" class="icon-btn no-drag" title="Neuer Chat" aria-label="Neuer Chat">
+        <button id="new-chat-btn" class="icon-btn no-drag" title="New chat" aria-label="New chat">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -28,23 +28,23 @@
 
       <div class="header-center titlebar-drag">
         <div class="chat-title-wrap no-drag">
-          <span id="current-chat-title" class="chat-title" title="Klicken zum Umbenennen">Neuer Chat</span>
+          <span id="current-chat-title" class="chat-title" title="Click to rename">New chat</span>
           <input type="text" id="rename-chat-input" class="rename-input hidden" spellcheck="false" maxlength="60" />
         </div>
       </div>
 
       <div class="header-right no-drag">
-        <button id="win-min" class="win-btn" title="Minimieren" aria-label="Minimieren">
+        <button id="win-min" class="win-btn" title="Minimize" aria-label="Minimize">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
         </button>
-        <button id="win-max" class="win-btn" title="Maximieren" aria-label="Maximieren">
+        <button id="win-max" class="win-btn" title="Maximize" aria-label="Maximize">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
           </svg>
         </button>
-        <button id="win-close" class="win-btn close" title="Schließen" aria-label="Schließen">✕</button>
+        <button id="win-close" class="win-btn close" title="Close" aria-label="Close">✕</button>
       </div>
     </header>
 
@@ -54,14 +54,14 @@
       <aside id="history-drawer" class="history-drawer hidden">
         <div class="drawer-header">
           <h2>Chats</h2>
-          <button id="close-history-btn" class="icon-btn" title="Schließen">✕</button>
+          <button id="close-history-btn" class="icon-btn" title="Close">✕</button>
         </div>
         <div class="drawer-search">
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input type="text" id="history-search-input" placeholder="Chats durchsuchen…" spellcheck="false" />
+          <input type="text" id="history-search-input" placeholder="Search chats…" spellcheck="false" />
         </div>
         <div id="history-list" class="history-list"></div>
       </aside>
@@ -72,10 +72,10 @@
         <div id="empty-state" class="empty-state">
           <div class="recent-chats-box">
             <div class="recent-header">
-              <span class="recent-label">Letzte Chats</span>
+              <span class="recent-label">Recent chats</span>
             </div>
             <div id="recent-chats-list" class="recent-chips-grid"></div>
-            <button type="button" id="btn-show-all-chats" class="link-btn">Alle anzeigen</button>
+            <button type="button" id="btn-show-all-chats" class="link-btn">Show all</button>
           </div>
         </div>
 
@@ -86,23 +86,23 @@
         <div class="composer-container">
           <div id="chat-notes-bar" class="chat-notes-bar hidden"></div>
           <div class="composer-pill">
-            <button id="composer-attach-btn" class="pill-btn icon-btn" title="Datei anhängen" aria-label="Datei anhängen">
+            <button id="composer-attach-btn" class="pill-btn icon-btn" title="Attach file" aria-label="Attach file">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
             </button>
-            <textarea id="standalone-input" rows="1" placeholder="Nachricht an Bloub…" spellcheck="false"></textarea>
+            <textarea id="standalone-input" rows="1" placeholder="Message Bloub…" spellcheck="false"></textarea>
             <div class="composer-actions">
               <div id="model-selector-slot"></div>
-              <button id="composer-mic-btn" class="pill-btn mic-btn" title="Spracheingabe" aria-label="Spracheingabe">
+              <button id="composer-mic-btn" class="pill-btn mic-btn" title="Voice input" aria-label="Voice input">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
                   <path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                   <path d="M12 17v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                 </svg>
               </button>
-              <button id="standalone-send-btn" class="pill-btn send-btn" title="Senden" aria-label="Senden">
+              <button id="standalone-send-btn" class="pill-btn send-btn" title="Send" aria-label="Send">
                 <svg id="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="19" x2="12" y2="5"></line>
                   <polyline points="5 12 12 5 19 12"></polyline>

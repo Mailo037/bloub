@@ -6,6 +6,7 @@ import {
   createSvgIcon,
   EXPRESSION_LABELS,
   SHAPE_LABELS,
+  COLOR_LABELS,
   type Grant,
   type PetConfigShape,
   type RecallStatus,
@@ -309,7 +310,8 @@ function buildPills() {
       const swatch = document.createElement('button')
       swatch.className = 'swatch'
       swatch.style.background = color.hex
-      swatch.title = color.id
+      swatch.title = COLOR_LABELS[color.id] ?? color.id
+      swatch.setAttribute('aria-label', swatch.title)
       swatch.dataset.id = color.id
       swatch.addEventListener('click', () => {
         void bridge.updateConfig({ color: color.id })
@@ -832,7 +834,7 @@ async function handleCheckUpdates() {
         updateCardTitle.textContent = res.releaseName || `Bloub Pet v${res.latestVersion}`
         if (updateCardDate) {
           updateCardDate.textContent = res.publishedAt
-            ? new Date(res.publishedAt).toLocaleDateString()
+            ? new Date(res.publishedAt).toLocaleDateString('en-US')
             : ''
         }
         updateCardNotes.textContent = res.releaseNotes || 'Includes latest fixes and improvements.'
@@ -1107,10 +1109,10 @@ async function refreshRecallStatus() {
   }
   // Storage-Summary
   const { bytes, lines, oldestTs } = st.storage ?? { bytes: 0, lines: 0, oldestTs: null }
-  storageEventsEl.textContent = lines.toLocaleString()
+  storageEventsEl.textContent = lines.toLocaleString('en-US')
   storageSizeEl.textContent = `${(bytes / 1024).toFixed(0)} KB`
   storageOldestEl.textContent = oldestTs
-    ? new Date(oldestTs).toLocaleDateString()
+    ? new Date(oldestTs).toLocaleDateString('en-US')
     : '—'
   storageMsg.textContent = `Retention: ${config.recall?.retentionDays ?? 14} days`
 }
