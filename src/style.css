@@ -1,3 +1,4 @@
+@import './ui/chrome.css';
 @import './ui/theme.css';
 
 :root {
@@ -161,17 +162,17 @@ body.settings-open #edit {
  */
 #chat-dock {
   position: absolute;
-  top: calc(50% + var(--ball-size) / 2 + 10px);
+  top: calc(50% + var(--ball-size) * .35 + 14px);
   left: 50%;
   transform: translateX(-50%);
-  width: 320px;
+  width: min(340px, calc(100vw - 32px));
   /*
    * Hartes Limit: der Dock darf NIE in den Bloub hineinwachsen. Die Hoehe
    * ist auf den Platz unter dem Ball beschraenkt (Fensterhoehe minus
    * Dock-Top minus Rand) — alles darueber laeuft in #reply-scroll.
    */
   max-height: calc(
-    100vh - (50% + var(--ball-size) / 2 + 10px) - 14px
+    100vh - (50% + var(--ball-size) * .35 + 14px) - 14px
   );
   display: flex;
   flex-direction: column;
@@ -705,116 +706,38 @@ body.settings-open #edit {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 5px;
-  background: rgba(17, 19, 24, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 4px;
+  min-width: 148px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  background: #292929;
+  border: 1px solid #404040;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  min-width: 140px;
+  box-shadow: 0 12px 32px #0006, 0 2px 6px #0003;
   user-select: none;
-  animation: menuPop 0.12s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transform-origin: top left;
 }
-
-#pet-menu.hidden {
-  display: none;
-}
-
-@keyframes menuPop {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
+#pet-menu.hidden { display: none; }
 .pet-menu-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: #e8e6e0;
-  font-size: 12.5px;
-  font-family: inherit;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.pet-menu-item:hover {
-  background: rgba(91, 140, 255, 0.25);
-  color: #ffffff;
-}
-
-.pet-menu-item.danger {
-  color: #ff6b6b;
-}
-
-.pet-menu-item.danger:hover {
-  background: rgba(255, 80, 80, 0.15);
-  color: #ff8080;
-}
-
-.pet-menu-icon {
-  font-size: 13px;
-  line-height: 1;
-  width: 16px;
-  text-align: center;
-  opacity: 0.85;
-}
-
-/* Minimal, opaque context menu: the same neutral surface as Settings. */
-#pet-menu {
-  gap: 0;
-  padding: 4px;
-  min-width: 156px;
-  border: 1px solid #3f3f46;
-  border-radius: 12px;
-  background: #111;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  animation: none;
-}
-
-.pet-menu-item {
   gap: 8px;
-  padding: 7px 9px;
-  border-radius: 8px;
-  color: #fafafa;
-  font-family: Geist, "Geist Sans", "Segoe UI", system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 450;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: #ededed;
+  font: 400 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
 }
-
-.pet-menu-item:hover,
-.pet-menu-item.danger:hover {
-  background: #262626;
-  color: #fff;
-}
-
-.pet-menu-item.danger {
-  color: #fafafa;
-}
-
-.pet-menu-separator {
-  height: 1px;
-  margin: 3px 5px;
-  background: #2a2a2a;
-}
-
-.pet-menu-icon {
-  opacity: 0.7;
-}
+.pet-menu-item:hover { background: #3a3a3a; }
+.pet-menu-item:focus-visible { outline: 2px solid #7aaaff; outline-offset: -2px; background: #3a3a3a; }
+.pet-menu-item.danger { color: #ededed; }
+.pet-menu-item.danger:hover { background: #443132; color: #ffc0c0; }
+.pet-menu-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: .85; }
+.pet-menu-separator { height: 1px; margin: 3px 8px; background: #414141; }
 
 /* -------------------------------------------------- monitor-id tag */
 
@@ -999,3 +922,51 @@ body.settings-open #edit {
   font-size: 11px;
   color: var(--color-text-dim, #9aa0a6);
 }
+/* Compact controls beneath the pet and one continuous composer surface. */
+#pet-chat-toolbar { display: flex; align-items: center; justify-content: center; align-self: center; gap: 3px; padding: 5px 7px; background: #1d1d1df5; border: 1px solid #ffffff0d; border-radius: 999px; box-shadow: 0 4px 14px #0002; }
+#pet-chat-toolbar button { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: #dedede; padding: 6px; cursor: pointer; box-shadow: none; }
+#pet-chat-toolbar button:hover { background: #353535; }
+#pet-chat-toolbar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pet-toolbar-divider { flex: 0 0 1px; height: 17px; background: #ffffff14; margin: 0 2px; pointer-events: none; }
+/* Keep the spacing fixed while hiding both edges of the hovered control. */
+#pet-chat-toolbar button:is(:hover, :focus-visible) + .pet-toolbar-divider,
+#pet-chat-toolbar .pet-toolbar-divider:has(+ button:is(:hover, :focus-visible)) { opacity: 0; }
+#input-row { background: #1b1b1bf5; border: 1px solid #ffffff08; border-radius: 22px; padding: 4px 6px; box-sizing: border-box; gap: 8px; }
+#chat-input { background: transparent; border: 0; box-shadow: none; backdrop-filter: none; min-width: 0; padding: 6px 0; min-height: 30px; height: 30px; line-height:18px; border-radius: 0; }
+#chat-dock #reply:not(.hidden), #chat-dock #chip-row:not(:empty), #chat-dock #note-row:not(:empty) { margin-bottom:8px; }
+#input-row #send { width: 28px; height: 28px; box-shadow: none; background: #285384 !important; color: #e6efff !important; border: 0; }
+#reply { background: #242424f5; border-radius: 20px; border-color: #ffffff14; }
+
+/* Pet dock: proximity pill, controls, then composer. */
+#chat-dock { transition: width 320ms cubic-bezier(.2,.8,.2,1); }
+.pet-dock-content { display:flex; flex-direction:column; gap:0; max-height:450px; opacity:1; transform:translateY(0) scale(1); transform-origin:top center; transition:max-height 320ms, opacity 180ms, transform 320ms; }
+#chat-dock.pet-compact { width:32px; }
+#chat-dock.pet-compact .pet-dock-content { max-height:0; opacity:0; transform:translateY(-6px) scale(.7); overflow:hidden; pointer-events:none; }
+.pet-dock-mini { position:absolute; top:0; left:50%; width:30px; height:7px; padding:0; border:0; border-radius:99px; background:#161616; opacity:0; transform:translateX(-50%) scale(.5); pointer-events:none; transition:opacity 180ms,transform 320ms; }
+#chat-dock.pet-compact .pet-dock-mini { opacity:1; transform:translateX(-50%) scale(1); pointer-events:auto; }
+.pet-dock-mini::before { content:''; position:absolute; inset:-12px; }
+#pet-chat-toolbar { max-height:42px; overflow:hidden; transition:max-height 280ms,opacity 180ms,padding 280ms,transform 280ms; }
+#chat-dock.pet-composer-open #pet-chat-toolbar { max-height:0; padding:0; border-width:0; opacity:0; transform:translateY(-8px) scale(.85); pointer-events:none; }
+#chat-dock #input-row { display:flex; max-height:140px; opacity:1; transform:translateY(0) scale(1); transform-origin:top center; overflow:hidden; transition:max-height 300ms,opacity 200ms,transform 300ms,padding 300ms; }
+#chat-dock #input-row.collapsed { display:flex; max-height:0; padding-top:0; padding-bottom:0; border-width:0; opacity:0; transform:translateY(-10px) scale(.85); pointer-events:none; visibility:hidden; }
+.pet-composer-back { width:26px; height:26px; flex-shrink:0; border:0; border-radius:50%; background:#333; color:#ddd; padding:5px; }
+.pet-composer-back svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+@media(prefers-reduced-motion:reduce) { #chat-dock,.pet-dock-content,.pet-dock-mini,#pet-chat-toolbar,#chat-dock #input-row { transition:none; } }
+
+/* Live voice is a quiet surface; the orb responds to actual audio energy. */
+.voice-launch-dot { width:10px; height:10px; border-radius:50%; background:currentColor; }
+.live-voice-panel { background:#1b1b1bf5; border:1px solid #ffffff0d; border-radius:22px; padding:18px 16px 12px; display:flex; flex-direction:column; align-items:center; gap:12px; animation:dockIn 240ms ease-out; }
+.live-voice-panel.hidden { display:none; }
+.voice-orb-space { height:86px; display:grid; place-items:center; }
+.voice-orb { --voice-level:0; display:block; width:40px; height:40px; border-radius:50%; background:#ececec; transform:scale(calc(1 + var(--voice-level) * .8)); box-shadow:0 0 calc(5px + var(--voice-level) * 25px) #ffffff22; }
+.live-voice-panel[data-state=speaking] .voice-orb { background:#a7caff; box-shadow:0 0 24px #548aff33; }
+.live-voice-panel[data-state=connecting] .voice-orb { animation:voice-breathe 1.4s ease-in-out infinite; }
+.live-voice-panel[data-state=error] .voice-orb { background:#d99494; width:18px; height:18px; }
+.live-voice-status { font-size:12px; color:#b5b5b5; text-align:center; line-height:1.5; }
+.live-voice-controls { display:flex; gap:8px; }
+.live-voice-controls button { border:0; border-radius:20px; padding:7px 13px; color:#ddd; background:#303030; cursor:pointer; }
+.live-voice-controls .voice-end { background:#443030; color:#f2c1c1; }
+#chat-dock.voice-active .pet-dock-content { display:none; }
+#chat-dock.voice-active { width:260px; }
+@keyframes voice-breathe { 50% { opacity:.4; transform:scale(.85); } }
+@media(prefers-reduced-motion:reduce) { .live-voice-panel,.live-voice-panel[data-state=connecting] .voice-orb { animation:none; } }

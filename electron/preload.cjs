@@ -37,10 +37,10 @@ contextBridge.exposeInMainWorld('bloubPet', {
     const { webUtils } = require('electron')
     return webUtils.getPathForFile(file)
   },
-  // chat window
+  // chat window & multi-chat
   sendChat: (payload) => ipcRenderer.invoke('chat:send', payload),
   showChat: () => ipcRenderer.send('ui:show-chat'),
-  abortChat: () => ipcRenderer.send('chat:abort'),
+  abortChat: (chatId) => ipcRenderer.send('chat:abort', chatId),
   hideChat: () => ipcRenderer.send('ui:hide-chat'),
   onChatEvent: (cb) => ipcRenderer.on('chat:event', (_e, ev) => cb(ev)),
   testProvider: () => ipcRenderer.invoke('chat:test-provider'),
@@ -51,6 +51,25 @@ contextBridge.exposeInMainWorld('bloubPet', {
   testHotkey: (combo) => ipcRenderer.invoke('hotkey:test', combo),
   setGrantSecrets: (path, allowSecrets) => ipcRenderer.invoke('grants:set-secrets', path, allowSecrets),
   removeGrant: (path) => ipcRenderer.invoke('grants:remove', path),
+
+  // Multi-chat management
+  listChats: () => ipcRenderer.invoke('chat:list'),
+  getChat: (id) => ipcRenderer.invoke('chat:get', id),
+  newChat: (title) => ipcRenderer.invoke('chat:new', title),
+  selectChat: (id) => ipcRenderer.invoke('chat:select', id),
+  renameChat: (id, title) => ipcRenderer.invoke('chat:rename', id, title),
+  archiveChat: (id) => ipcRenderer.invoke('chat:archive', id),
+  deleteChat: (id) => ipcRenderer.invoke('chat:delete', id),
+  searchChats: (query) => ipcRenderer.invoke('chat:search', query),
+  regenerateChatTitle: (id) => ipcRenderer.invoke('chat:regenerate-title', id),
+  getActiveChat: () => ipcRenderer.invoke('chat:get-active'),
+
+  // Compact separate chat window controls
+  openChatWindow: () => ipcRenderer.send('ui:open-chat-window'),
+  closeChatWindow: () => ipcRenderer.send('ui:close-chat-window'),
+  minimizeChatWindow: () => ipcRenderer.send('ui:minimize-chat-window'),
+  maximizeChatWindow: () => ipcRenderer.send('ui:maximize-chat-window'),
+
   // activity recall
   recallGetStatus: () => ipcRenderer.invoke('recall:get-status'),
   recallSetConfig: (partial) => ipcRenderer.invoke('recall:set-config', partial),
@@ -62,9 +81,21 @@ contextBridge.exposeInMainWorld('bloubPet', {
   recallExtensionFolder: () => ipcRenderer.invoke('recall:extension-folder'),
   // audio / voice (Gemini-powered, separate engine)
   setAudioApiKey: (key) => ipcRenderer.invoke('audio:set-api-key', key),
+  startLiveVoice: (id) => ipcRenderer.invoke('voice:start', id),
+  sendLiveAudio: (id, data) => ipcRenderer.send('voice:audio', id, data),
+  stopLiveVoice: (id) => ipcRenderer.send('voice:stop', id),
+  onLiveVoice: (cb) => { const handler = (_e, event) => cb(event); ipcRenderer.on('voice:event', handler); return () => ipcRenderer.removeListener('voice:event', handler) },
+  setTranscriptionApiKey: (key) => ipcRenderer.invoke('audio:set-transcription-key', key),
+  getTranscriptionKeyStatus: () => ipcRenderer.invoke('audio:has-transcription-key'),
   getAudioKeyStatus: () => ipcRenderer.invoke('audio:has-key'),
   setAudioPttHotkey: (combo) => ipcRenderer.invoke('audio:set-ptt-hotkey', combo),
   testAudioConnection: () => ipcRenderer.invoke('audio:test'),
+  deleteDictation: (id) => ipcRenderer.invoke('audio:delete-dictation', id),
+  downloadDictation: (id) => ipcRenderer.invoke('audio:download-dictation', id),
+  retryDictation: (id) => ipcRenderer.invoke('audio:retry-dictation', id),
+  copyDictation: (id) => ipcRenderer.invoke('audio:copy-dictation', id),
+  listChatModels: () => ipcRenderer.invoke('chat:models'),
+  listDictations: () => ipcRenderer.invoke('audio:dictations'),
   transcribeAudio: (payload) => ipcRenderer.invoke('audio:transcribe', payload),
   // TTS: Text in base64-Audio umwandeln
   speakText: (text) => ipcRenderer.invoke('audio:speak', text),
@@ -82,4 +113,3 @@ contextBridge.exposeInMainWorld('bloubPet', {
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   onUpdateProgress: (cb) => ipcRenderer.on('app:update-progress', (_e, progress) => cb(progress))
 })
-

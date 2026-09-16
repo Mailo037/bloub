@@ -41,6 +41,7 @@ const DEV_URL = process.env.BLOUB_PET_DEV_URL || ''
 
 let win = null
 let settingsWin = null
+let chatWin = null
 let tray = null
 let config = null
 let isQuitting = false
@@ -99,8 +100,13 @@ app.on('second-instance', () => {
   }
 })
 
-const SETTINGS_W = 392
+const SETTINGS_W = 860
 const SETTINGS_H = 680
+
+const CHAT_WIN_W = 460
+const CHAT_WIN_H = 680
+const CHAT_WIN_MIN_W = 380
+const CHAT_WIN_MIN_H = 460
 
 /** Gemeinsame Chromeless-Flags fuer rahmenlose Fenster. */
 function overlayWindowOptions(extra) {
@@ -702,6 +708,88 @@ function closeSettings() {
 
 /* ------------------------------------------------------- chat window */
 
+function openChatWindow() {
+  if (chatWin && !chatWin.isDestroyed()) {
+    if (chatWin.isMinimized()) chatWin.restore()
+    chatWin.show()
+    chatWin.focus()
+    return chatWin
+  }
+
+  const [winX, winY] = win && !win.isDestroyed() ? win.getPosition() : [0, 0]
+  const targetDisplay = screen.getDisplayNearestPoint({ x: Math.round(winX + 310), y: Math.round(winY + 310) }) || screen.getPrimaryDisplay()
+  const { workArea } = targetDisplay
+
+  const ballR = Math.round((config.ballSize || 200) / 2)
+  let x = winX + 310 + ballR + 16
+  let y = winY + 310 - Math.round(CHAT_WIN_H / 2)
+  if (x + CHAT_WIN_W > workArea.x + workArea.width) {
+    x = winX + 310 - ballR - CHAT_WIN_W - 16
+  }
+  y = Math.min(Math.max(y, workArea.y + 10), workArea.y + workArea.height - CHAT_WIN_H - 10)
+  x = Math.min(Math.max(x, workArea.x + 10), workArea.x + workArea.width - CHAT_WIN_W - 10)
+
+  chatWin = new BrowserWindow(
+    overlayWindowOptions({
+      x,
+      y,
+      width: CHAT_WIN_W,
+      height: CHAT_WIN_H,
+      minWidth: CHAT_WIN_MIN_W,
+      minHeight: CHAT_WIN_MIN_H,
+      transparent: false,
+      backgroundColor: '#242424',
+      roundedCorners: true,
+      thickFrame: true,
+      resizable: true,
+      movable: true,
+      minimizable: true,
+      maximizable: true,
+      skipTaskbar: false,
+      alwaysOnTop: true,
+      focusable: true,
+      show: false,
+      icon: windowIcon(),
+      webPreferences: {
+        preload: rendererPreload(),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+  )
+
+  chatWin.removeMenu()
+  chatWin.webContents.on('page-title-updated', (e) => e.preventDefault())
+  chatWin.setAlwaysOnTop(true, 'floating')
+  applyOverlayChrome(chatWin)
+  loadRenderer(chatWin, 'chat.html')
+
+  chatWin.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    if (level >= 2) console.error(`[chat] ${message} (${sourceId}:${line})`)
+  })
+
+  chatWin.once('ready-to-show', () => {
+    chatWin.show()
+    chatWin.focus()
+  })
+
+  chatWin.on('close', (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    chatWin.hide()
+  })
+
+  chatWin.on('closed', () => {
+    chatWin = null
+  })
+
+  return chatWin
+}
+
+function closeChatWindow() {
+  if (chatWin && !chatWin.isDestroyed()) chatWin.hide()
+}
+
 const chatState = {
   attachments: new Map(), // id -> { id, kind, name, size, path }
   nextAttachmentId: 1
@@ -1241,6 +1329,7 @@ function getChat() {
 function sendChatEvent(ev) {
   // Das Chat-Dock lebt im Pet-Fenster — Events gehen dorthin
   if (win && !win.isDestroyed()) win.webContents.send('chat:event', ev)
+  if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('chat:event', ev)
   // Zeichnung: die Linien bleiben sichtbar, bis der Turn komplett fertig ist —
   // dann 1,5 s stehen lassen und ausblenden. Ermoeglicht mehrere
   // pet_draw_path-Calls (z. B. zwei Drawings mit zwei Toolcodes).
@@ -1250,16 +1339,16 @@ function sendChatEvent(ev) {
 let chatVisible = false
 
 function showChat() {
+  openChatWindow()
   if (!win || win.isDestroyed()) return
   if (getChat().hasPendingTail()) sendChatEvent({ type: 'pending-tail' })
   chatVisible = true
   applyOverlayChrome(win)
   win.webContents.send('ui:chat-visibility', true)
-  win.focus()
-  applyOverlayChrome(win)
 }
 
 function hideChat() {
+  if (chatWin && !chatWin.isDestroyed()) chatWin.hide()
   if (!win || win.isDestroyed()) return
   chatVisible = false
   win.webContents.send('ui:chat-visibility', false)
@@ -1267,8 +1356,13 @@ function hideChat() {
 }
 
 function toggleChat() {
-  if (chatVisible) hideChat()
-  else showChat()
+  if (chatWin && !chatWin.isDestroyed() && chatWin.isVisible()) {
+    chatWin.hide()
+    chatVisible = false
+  } else {
+    openChatWindow()
+    chatVisible = true
+  }
 }
 
 /* ------------------------------------------------------------ autopilot */
@@ -1571,25 +1665,70 @@ ipcMain.on('pet:request-chat-toggle', () => toggleChat())
 
 ipcMain.handle('chat:send', async (_e, payload) => {
   const parts = await buildUserParts(payload?.text, payload?.attachmentIds)
-  sendChatEvent({ type: 'accepted', chipText: payload?.text?.trim() ?? '', attachments: payload?.attachmentIds ?? [] })
+  const chatId = payload?.chatId || history.getActiveChatId(app.getPath('userData')) || 'default'
+  // Keep a window-originated turn's UI events in that window, including
+  // provider errors. Do not open an unsolicited reply bubble under the pet.
+  const fromChatWindow = chatWin && !chatWin.isDestroyed() && _e.sender === chatWin.webContents
+  const emitTurn = fromChatWindow
+    ? (ev) => { if (!_e.sender.isDestroyed()) _e.sender.send('chat:event', { ...ev, chatId }) }
+    : sendChatEvent
+  emitTurn({ type: 'accepted', chipText: payload?.text?.trim() ?? '', attachments: payload?.attachmentIds ?? [], chatId })
   try {
-    await getChat().runTurn(parts, sendChatEvent)
+    await getChat().runTurn(parts, emitTurn, chatId)
   } catch (err) {
-    sendChatEvent({ type: 'error', message: err?.message || String(err) })
+    emitTurn({ type: 'error', message: err?.message || String(err), chatId })
   }
   // Abschluss-Wink ans Pet melden (der Loop hat fertig geantwortet)
   if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
-  // Nach dem Senden gilt der Chat-Eingabemodus als zu (der Input ist collapsed).
-  // Dadurch reicht EIN Hotkey-Druck, um den Input wieder aufzuklappen statt
-  // erst "zuzumachen" (Bug: sonst muesste man den Toggle zweimal druecken).
   chatVisible = false
   return true
 })
 
-ipcMain.on('chat:abort', () => {
-  getChat().abort()
+ipcMain.on('chat:abort', (_e, payload) => {
+  const chatId = typeof payload === 'string' ? payload : payload?.chatId
+  getChat().abort(chatId)
   // Bei Abbruch mitten im Turn die Zeichenflaeche ebenfalls nach kurzer Zeit ausblenden
   queueDrawHide()
+})
+
+ipcMain.handle('chat:models', () => require('./chat/model-catalog.cjs').catalog(config.chat))
+ipcMain.handle('chat:list', () => history.listChats(app.getPath('userData')))
+ipcMain.handle('chat:get', (_e, id) => history.getChat(app.getPath('userData'), id))
+ipcMain.handle('chat:new', (_e, title) => history.createChat(app.getPath('userData'), title))
+ipcMain.handle('chat:select', (_e, id) => {
+  const ud = app.getPath('userData')
+  const existing = history.getChat(ud, id)
+  if (!existing) return false
+  const selected = history.setActiveChat(ud, id)
+  return !!selected
+})
+ipcMain.handle('chat:rename', (_e, id, title) => history.renameChat(app.getPath('userData'), id, title, true))
+ipcMain.handle('chat:archive', (_e, id) => history.archiveChat(app.getPath('userData'), id))
+ipcMain.handle('chat:delete', (_e, id) => history.deleteChat(app.getPath('userData'), id))
+ipcMain.handle('chat:search', (_e, query) => history.searchChats(app.getPath('userData'), query))
+ipcMain.handle('chat:regenerate-title', async (_e, id) => {
+  const cfgChat = {
+    baseUrl: config.chat.baseUrl,
+    protocol: config.chat.protocol,
+    model: config.chat.model,
+    apiKey: getApiKey()
+  }
+  return history.generateAndSetTitle(app.getPath('userData'), id, cfgChat)
+})
+ipcMain.handle('chat:get-active', () => history.getActiveChatId(app.getPath('userData')))
+
+ipcMain.on('ui:open-chat-window', () => openChatWindow())
+ipcMain.on('ui:close-chat-window', () => {
+  if (chatWin && !chatWin.isDestroyed()) chatWin.hide()
+})
+ipcMain.on('ui:minimize-chat-window', () => {
+  if (chatWin && !chatWin.isDestroyed()) chatWin.minimize()
+})
+ipcMain.on('ui:maximize-chat-window', () => {
+  if (chatWin && !chatWin.isDestroyed()) {
+    if (chatWin.isMaximized()) chatWin.unmaximize()
+    else chatWin.maximize()
+  }
 })
 
 ipcMain.handle('chat:test-provider', async () => {
@@ -1639,6 +1778,39 @@ ipcMain.handle('hotkey:test', (_e, combo) => {
 /* ------------------------------------------------------------ audio ipc */
 
 const audioSpeechStreams = new Map()
+const liveVoiceSessions = new Map()
+ipcMain.handle('voice:start', (event, requestId) => {
+  const sender = event.sender
+  if (typeof requestId !== 'string' || requestId.length > 100) return { ok: false, error: 'Ungültige Sitzung.' }
+  liveVoiceSessions.get(sender.id)?.session.close()
+  try {
+    const provider = config.audio?.liveProvider === 'openai' ? 'openai' : 'gemini'
+    let apiKey = getAudioApiKey()
+    if (provider === 'openai') {
+      apiKey = config.audio?.transcriptionKeyEnc && safeStorage.isEncryptionAvailable()
+        ? safeStorage.decryptString(Buffer.from(config.audio.transcriptionKeyEnc, 'base64')) : ''
+    }
+    let removeListeners = () => {}
+    const session = require('./chat/live-voice.cjs').connectVoice({ provider, apiKey, emit: payload => {
+      if (!sender.isDestroyed()) sender.send('voice:event', { ...payload, requestId })
+      if (payload.type === 'closed') { removeListeners(); if (liveVoiceSessions.get(sender.id)?.requestId === requestId) liveVoiceSessions.delete(sender.id) }
+    } })
+    liveVoiceSessions.set(sender.id, { session, requestId })
+    const cleanup = () => { session.close(); removeListeners() }
+    removeListeners = () => { sender.removeListener('destroyed', cleanup); sender.removeListener('did-start-loading', cleanup) }
+    sender.once('destroyed', cleanup)
+    sender.once('did-start-loading', cleanup)
+    return { ok: true, provider }
+  } catch (error) { return { ok: false, error: error.message } }
+})
+ipcMain.on('voice:audio', (event, requestId, data) => {
+  const entry = liveVoiceSessions.get(event.sender.id)
+  if (entry?.requestId === requestId) entry.session.audio(data)
+})
+ipcMain.on('voice:stop', (event, requestId) => {
+  const entry = liveVoiceSessions.get(event.sender.id)
+  if (entry?.requestId === requestId) entry.session.close()
+})
 let audioSpeechStreamSeq = 0
 
 function getAudioApiKey() {
@@ -1672,6 +1844,29 @@ ipcMain.handle('audio:set-api-key', (_e, key) => {
 // Nur true/false zurueckgeben — der Key selbst verlässt den Main nie.
 ipcMain.handle('audio:has-key', () => ({ hasKey: !!config.audio?.apiKeyEnc }))
 
+ipcMain.handle('audio:set-transcription-key', (_e, key) => {
+  const plain = String(key ?? '').trim()
+  if (plain && !safeStorage.isEncryptionAvailable()) return { ok: false }
+  config.audio.transcriptionKeyEnc = plain ? safeStorage.encryptString(plain).toString('base64') : ''
+  saveConfig()
+  broadcastConfig()
+  return { ok: true }
+})
+ipcMain.handle('audio:has-transcription-key', () => ({ hasKey: !!config.audio?.transcriptionKeyEnc }))
+
+function transcribeRecording(audioBuffer, mime) {
+  let apiKey = ''
+  try {
+    if (config.audio?.transcriptionKeyEnc && safeStorage.isEncryptionAvailable()) {
+      apiKey = safeStorage.decryptString(Buffer.from(config.audio.transcriptionKeyEnc, 'base64'))
+    }
+  } catch { /* The provider reports the missing key without exposing credentials. */ }
+  return require('./chat/transcription.cjs').transcribe({
+    provider: config.audio?.transcriptionProvider || 'openai', apiKey,
+    localUrl: config.audio?.whisperUrl, audioBuffer, mime
+  })
+}
+
 ipcMain.handle('audio:set-ptt-hotkey', (_e, combo) => {
   const c = String(combo ?? '').trim() || null
   if (config.audio) config.audio.pttHotkey = c ?? ''
@@ -1694,9 +1889,33 @@ ipcMain.handle('audio:test', async () => {
 })
 
 // Push-to-Talk: Aufnahme (base64-Audio) -> Gemini-STT -> Text an den Renderer zurueck.
+const dictationStore = require('./dictations.cjs')
+ipcMain.handle('audio:copy-dictation', (_e, id) => {
+  const entry = dictationStore.list(app.getPath('userData')).find(e => e.id === id)
+  if (!entry) return false
+  require('electron').clipboard.writeText(entry.text)
+  return true
+})
+ipcMain.handle('audio:delete-dictation', (_e, id) => dictationStore.remove(app.getPath('userData'), id))
+ipcMain.handle('audio:download-dictation', async (event, id) => {
+  const { entry, data } = dictationStore.audio(app.getPath('userData'), id)
+  const ext = entry.mime.includes('wav') ? 'wav' : entry.mime.includes('ogg') ? 'ogg' : 'webm'
+  const result = await require('electron').dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+    defaultPath: 'Diktat-' + new Date(entry.createdAt).toISOString().slice(0, 10) + '.' + ext,
+    filters: [{ name: 'Audio', extensions: [ext] }]
+  })
+  if (result.canceled || !result.filePath) return false
+  fs.writeFileSync(result.filePath, data)
+  return true
+})
+ipcMain.handle('audio:retry-dictation', async (_e, id) => {
+  const { entry, data } = dictationStore.audio(app.getPath('userData'), id)
+  const result = await transcribeRecording(data, entry.mime)
+  if (result.ok && result.text?.trim()) dictationStore.setText(app.getPath('userData'), id, result.text)
+  return result
+})
+ipcMain.handle('audio:dictations', () => dictationStore.list(app.getPath('userData')))
 ipcMain.handle('audio:transcribe', async (_e, payload) => {
-  const apiKey = getAudioApiKey()
-  if (!apiKey) return { ok: false, text: '', error: 'Gemini API key not set (Audio tab)' }
   const data = payload?.data
   if (!data || typeof data !== 'string') return { ok: false, text: '', error: 'no audio data' }
   let buf
@@ -1707,12 +1926,11 @@ ipcMain.handle('audio:transcribe', async (_e, payload) => {
   }
   if (!buf.length) return { ok: false, text: '', error: 'empty audio data' }
   if (buf.length > 18 * 1024 * 1024) return { ok: false, text: '', error: 'audio is too large' }
-  const result = await geminiAudio.transcribe({
-    apiKey,
-    baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
-    audioBuffer: buf,
-    mime: payload?.mime || 'audio/webm'
-  })
+  const result = await transcribeRecording(buf, payload?.mime || 'audio/webm')
+  if (payload?.source !== 'voice-chat') {
+    try { dictationStore.save(app.getPath('userData'), result.ok ? result.text : '', buf, payload?.mime || 'audio/webm') }
+    catch (error) { runtimeIssue('dictation-save', error) }
+  }
   return result.ok ? { ok: true, text: result.text } : { ok: false, text: '', error: result.error }
 })
 
@@ -2606,6 +2824,9 @@ function requestQuit() {
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.hide()
   }
+  if (chatWin && !chatWin.isDestroyed()) {
+    chatWin.hide()
+  }
   if (win && !win.isDestroyed()) {
     win.webContents.send('pet:quit-requested')
     setTimeout(() => {
@@ -2655,6 +2876,10 @@ function buildTrayMenu() {
           win.moveTop()
         }
       }
+    },
+    {
+      label: 'Open Chat',
+      click: () => showChat()
     },
     {
       label: 'Settings…',
@@ -2708,6 +2933,7 @@ function createTray() {
 app.whenReady().then(() => {
   startRuntimeDiagnostics()
   loadConfig()
+  history.init(app.getPath('userData'))
   createWindow()
   startPetWatchdog()
   startPetRendererHealthCheck()

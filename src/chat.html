@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bloub Chat</title>
+  <link rel="stylesheet" href="./chat.css" />
+</head>
+<body>
+  <div id="standalone-chat" class="standalone-app">
+    <!-- Titlebar & Navigation -->
+    <header class="chat-header">
+      <div class="header-left">
+        <button id="toggle-history-btn" class="icon-btn no-drag" title="Chats" aria-label="Chats">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <button id="new-chat-btn" class="icon-btn no-drag" title="Neuer Chat" aria-label="Neuer Chat">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="header-center titlebar-drag">
+        <div class="chat-title-wrap no-drag">
+          <span id="current-chat-title" class="chat-title" title="Klicken zum Umbenennen">Neuer Chat</span>
+          <input type="text" id="rename-chat-input" class="rename-input hidden" spellcheck="false" maxlength="60" />
+        </div>
+      </div>
+
+      <div class="header-right no-drag">
+        <button id="win-min" class="win-btn" title="Minimieren" aria-label="Minimieren">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <button id="win-max" class="win-btn" title="Maximieren" aria-label="Maximieren">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+          </svg>
+        </button>
+        <button id="win-close" class="win-btn close" title="Schließen" aria-label="Schließen">✕</button>
+      </div>
+    </header>
+
+    <!-- Body Container: History Drawer + Conversation -->
+    <div class="chat-body-container">
+      <!-- History Drawer (Slide-out / Overlay) -->
+      <aside id="history-drawer" class="history-drawer hidden">
+        <div class="drawer-header">
+          <h2>Chats</h2>
+          <button id="close-history-btn" class="icon-btn" title="Schließen">✕</button>
+        </div>
+        <div class="drawer-search">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="history-search-input" placeholder="Chats durchsuchen…" spellcheck="false" />
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </aside>
+
+      <!-- Main Messages View Area -->
+      <main class="conversation-view">
+        <!-- Empty State (ChatGPT inspired) -->
+        <div id="empty-state" class="empty-state">
+          <div class="recent-chats-box">
+            <div class="recent-header">
+              <span class="recent-label">Letzte Chats</span>
+            </div>
+            <div id="recent-chats-list" class="recent-chips-grid"></div>
+            <button type="button" id="btn-show-all-chats" class="link-btn">Alle anzeigen</button>
+          </div>
+        </div>
+
+        <!-- Messages Flow -->
+        <div id="messages-container" class="messages-container hidden"></div>
+
+        <!-- Composer Area -->
+        <div class="composer-container">
+          <div id="chat-notes-bar" class="chat-notes-bar hidden"></div>
+          <div class="composer-pill">
+            <button id="composer-attach-btn" class="pill-btn icon-btn" title="Datei anhängen" aria-label="Datei anhängen">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+            <textarea id="standalone-input" rows="1" placeholder="Nachricht an Bloub…" spellcheck="false"></textarea>
+            <div class="composer-actions">
+              <div id="model-selector-slot"></div>
+              <button id="composer-mic-btn" class="pill-btn mic-btn" title="Spracheingabe" aria-label="Spracheingabe">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+                  <path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M12 17v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button id="standalone-send-btn" class="pill-btn send-btn" title="Senden" aria-label="Senden">
+                <svg id="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"></line>
+                  <polyline points="5 12 12 5 19 12"></polyline>
+                </svg>
+                <svg id="stop-icon" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <input type="file" id="hidden-file-input" style="display:none" multiple />
+  <script type="module" src="./chat.ts"></script>
+</body>
+</html>

@@ -205,7 +205,7 @@ function chatDefaults() {
     verbosity: 'balanced',
     fileAccess: 'read',
     shellEnabled: false,
-    memoryEnabled: false,
+    memoryEnabled: true,
     fullDriveAccess: false,
     // Actions: was die AI mit ihren Pet-Tools tun darf + Budgets pro Turn
     expressionAccess: true,
@@ -232,11 +232,12 @@ function chatDefaults() {
  * - onDrawPath({ points, color }) bewegt den Bloub ueber den Bildschirm und malt eine Linie
  */
 function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFilePath, onDrawPath }) {
-  let currentAbort = null
-  /** Nicht abgeschlossener Text des letzten Laufs — fuer "..." beim naechsten Summon. */
-  let pendingTail = false
-  /** Screenshots aus desktop_screenshot: werden in den NAECHSTEN Request injiziert. */
-  let pendingScreenshots = []
+  const activeRuns = new Map()
+  let autopilotAbort = null
+  /** Nicht abgeschlossener Text des letzten Laufs je Chat — fuer "..." beim naechsten Summon. */
+  const pendingTailByChat = new Map()
+  /** Screenshots aus desktop_screenshot je Chat: verhindert Cross-Chat Kontext-Leakage. */
+  const pendingScreenshotsByChat = new Map()
 
   /** Actions-Zugriffe + Budgets aus der Config — von Prompt, Tools und Loop geteilt. */
   function actionsFromCfg(cfgChat) {
@@ -285,7 +286,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
     return { runnable, skipped }
   }
 
-  function buildNormalizedRequest(records, useTools) {
+  function buildNormalizedRequest(records, useTools, targetChatId) {
     // Records -> normalisierte Messages; Budget: tool-Paare zuerst kappen
     const messages = []
     for (const r of records) {
@@ -300,9 +301,10 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
         messages.push({ role: 'tool', toolCallId: r.toolCallId, name: r.name, content: r.content })
       }
     }
-    // Screenshots als eigene User-Message anhaengen, damit das Modell sie sieht
-    if (pendingScreenshots.length > 0) {
-      const shots = pendingScreenshots.splice(0)
+    // Screenshots als eigene User-Message anhaengen, damit das Modell sie sieht (pro Chat isoliert)
+    const shots = targetChatId ? (pendingScreenshotsByChat.get(targetChatId) || []) : []
+    if (shots.length > 0) {
+      pendingScreenshotsByChat.delete(targetChatId)
       const parts = [{ type: 'text', text: '(desktop screenshot — look at the attached image)' }]
       for (const s of shots) parts.push({ type: 'image', mime: s.mime, data: s.data })
       messages.push({ role: 'user', content: parts })
@@ -311,7 +313,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
     const verbosity = getCfg().chat.verbosity || 'balanced'
     const fileAccess = getCfg().chat.fileAccess || 'read'
     const shellEnabled = !!getCfg().chat.shellEnabled
-    const memoryEnabled = !!getCfg().chat.memoryEnabled
+    const memoryEnabled = getCfg().chat.memoryEnabled !== false
     const cfgChat = getCfg().chat
     const actions = actionsFromCfg(cfgChat)
     const budgets = budgetsFromCfg(cfgChat)
@@ -329,8 +331,8 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
   }
 
   /** Letzte maxHistoryTurns Records laden und für das LLM bereitstellen. */
-  function budgetedRecords(maxTurns) {
-    const all = history.loadRecords(userData, 0)
+  function budgetedRecords(maxTurns, targetChatId) {
+    const all = history.loadRecords(userData, 0, targetChatId)
     const limit = maxTurns && maxTurns > 0 ? maxTurns : 40
     if (all.length <= limit) {
       const firstUserIdx = all.findIndex((r) => r.role === 'user')
@@ -345,11 +347,12 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
   }
 
   /** Tool-Kontext fuer executeTool — von User-Turns und Autopilot-Ticks geteilt. */
-  function buildToolCtx(cfgChat) {
+  function buildToolCtx(cfgChat, targetChatId, sendWithChatId) {
     return {
       grants: cfgChat.grants,
       fileAccess: cfgChat.fileAccess || 'read',
       shellEnabled: !!cfgChat.shellEnabled,
+      memoryEnabled: cfgChat.memoryEnabled !== false,
       // Actions-Zugriffe: executeTool blockt gesperrte Tools auch dann, wenn
       // das Modell sie trotzdem callt (z.B. halluziniert)
       actions: actionsFromCfg(cfgChat),
@@ -361,26 +364,60 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
       takeScreenshot: typeof takeScreenshot === 'function'
         ? async () => {
             const shot = await takeScreenshot()
-            if (shot.ok) pendingScreenshots.push(shot)
+            if (shot.ok && targetChatId) {
+              const list = pendingScreenshotsByChat.get(targetChatId) || []
+              list.push(shot)
+              pendingScreenshotsByChat.set(targetChatId, list)
+            }
             return shot
           }
         : undefined,
       // pet_draw_path: Bloub ueber den Bildschirm bewegen und Linie malen
-      onDrawPath: typeof onDrawPath === 'function' ? onDrawPath : undefined
+      onDrawPath: typeof onDrawPath === 'function' ? onDrawPath : undefined,
+      // chat_set_title: Modell/Action darf den Chat-Titel anpassen
+      onRenameChat: async (newTitle) => {
+        if (!targetChatId) return
+        history.renameChat(userData, targetChatId, newTitle, false)
+        if (typeof sendWithChatId === 'function') {
+          sendWithChatId({ type: 'title', title: newTitle, chatId: targetChatId })
+        }
+      }
     }
   }
 
-  async function runTurn(userParts, send) {
-    if (currentAbort) currentAbort.abort()
+  async function runTurn(userParts, send, chatId) {
+    const targetChatId = chatId || history.getActiveChatId(userData) || 'default'
+    if (activeRuns.has(targetChatId)) {
+      activeRuns.get(targetChatId).abort()
+    }
     const ac = new AbortController()
-    currentAbort = ac
+    activeRuns.set(targetChatId, ac)
+
+    const sendWithChatId = (ev) => {
+      send({ ...ev, chatId: targetChatId })
+    }
 
     const cfgChat = getCfg().chat
     // Budgets gelten pro Turn ueber alle Hops hinweg
     const startBudget = budgetsFromCfg(cfgChat)
     const budgetState = { callsLeft: startBudget.maxToolCalls, drawsLeft: startBudget.maxDrawCalls }
     const userRecord = { role: 'user', parts: userParts }
-    history.appendRecord(userData, userRecord)
+    history.appendRecord(userData, userRecord, targetChatId)
+
+    // Auto-Title nach erster User-Nachricht (einmalig, max. 5 Wörter, überschreibt keine manuellen Titel)
+    try {
+      const currentChat = history.getChat(userData, targetChatId)
+      const userRecordCount = currentChat?.records ? currentChat.records.filter((r) => r.role === 'user').length : 0
+      if (userRecordCount === 1 && !currentChat?.manualTitle && !currentChat?.autoTitled) {
+        history.generateAndSetTitle(userData, targetChatId, cfgChat).then((newTitle) => {
+          if (newTitle) {
+            sendWithChatId({ type: 'title', title: newTitle, chatId: targetChatId })
+          }
+        }).catch(() => {})
+      }
+    } catch {
+      /* ignore auto title error */
+    }
 
     let hop = 0
     let assistantText = ''
@@ -391,13 +428,13 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
     try {
       while (true) {
         if (hop > 0 && hadTextSegment) {
-          send({ type: 'clear' })
+          sendWithChatId({ type: 'clear' })
         }
         assistantText = ''
         hadTextSegment = false
         // Budget ausgeschoept? Dann keine Tools mehr anbieten — nur noch Text.
         const useTools = !!cfgChat.toolsEnabled && budgetState.callsLeft > 0
-        const req = buildNormalizedRequest(budgetedRecords(cfgChat.maxHistoryTurns), useTools)
+        const req = buildNormalizedRequest(budgetedRecords(cfgChat.maxHistoryTurns, targetChatId), useTools, targetChatId)
         const toolCalls = []
 
         let hadError = false
@@ -410,15 +447,15 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
               case 'token':
                 assistantText += ev.text
                 hadTextSegment = true
-                pendingTail = true
-                send({ type: 'token', text: ev.text })
+                pendingTailByChat.set(targetChatId, true)
+                sendWithChatId({ type: 'token', text: ev.text })
                 break
               case 'tool_call':
                 toolCalls.push(ev)
                 break
               case 'error':
                 hadError = true
-                send({ type: 'error', message: ev.message })
+                sendWithChatId({ type: 'error', message: ev.message })
                 break
               default:
                 break
@@ -430,11 +467,11 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
 
         if (toolCalls.length > 0 && !truncated) {
           // Assistant-Turn samt Calls persistent machen, dann Tools laufen lassen
-          history.appendRecord(userData, { role: 'assistant', content: assistantText, toolCalls })
+          history.appendRecord(userData, { role: 'assistant', content: assistantText, toolCalls }, targetChatId)
 
           // Dem Renderer Bescheid geben: Tools laufen jetzt — der Bloub denkt
           // wieder (auch mitten im Stream, nach schon gezeigtem Text).
-          send({ type: 'tools' })
+          sendWithChatId({ type: 'tools' })
 
           // Budgets anwenden: ueberzaehlige Calls werden gar nicht erst
           // ausgefuehrt und bekommen ein Fehler-Ergebnis (der Call selbst ist
@@ -453,9 +490,9 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
             } catch {
               /* unparsebare Args -> keine Notiz */
             }
-            if (note) send({ type: 'note', text: note })
+            if (note) sendWithChatId({ type: 'note', text: note })
           }
-          if (skipped.size > 0) send({ type: 'note', text: '… tool/draw budget reached' })
+          if (skipped.size > 0) sendWithChatId({ type: 'note', text: '… tool/draw budget reached' })
 
           // TOOL BATCHING: unabhaengige Calls laufen parallel (Promise.all),
           // damit ein Multi-Tool-Turn statt Summe nur das langsamste Tool dauert.
@@ -467,7 +504,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
           const serial = runnable.filter((tc) => SERIAL_TOOLS.has(tc.name))
           const parallel = runnable.filter((tc) => !SERIAL_TOOLS.has(tc.name))
 
-          const toolCtx = buildToolCtx(cfgChat)
+          const toolCtx = buildToolCtx(cfgChat, targetChatId, sendWithChatId)
 
           // Ergebnisse rueckfuehren an die Original-Reihenfolge der Calls
           const results = new Array(toolCalls.length)
@@ -475,7 +512,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
           const runOne = async (tc, idx) => {
             const result = await toolsMod.executeTool(tc.name, tc.argsJson, toolCtx)
             if (!result.ok) {
-              send({ type: 'note', text: `⚠ ${(result.content || '').slice(0, 80)}` })
+              sendWithChatId({ type: 'note', text: `⚠ ${(result.content || '').slice(0, 80)}` })
             }
             results[idx] = result
           }
@@ -499,11 +536,11 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
               name: tc.name,
               content: result.content ?? '',
               isError: result.isError
-            })
+            }, targetChatId)
           }
           if (++hop >= MAX_TOOL_HOPS) {
-            history.appendRecord(userData, { role: 'user', parts: [{ type: 'text', text: '(system note: tool budget exhausted — answer now)' }] })
-            send({ type: 'note', text: '… tool budget reached — answering now' })
+            history.appendRecord(userData, { role: 'user', parts: [{ type: 'text', text: '(system note: tool budget exhausted — answer now)' }] }, targetChatId)
+            sendWithChatId({ type: 'note', text: '… tool budget reached — answering now' })
           }
           continue
         }
@@ -513,24 +550,38 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
           role: 'assistant',
           content: assistantText,
           truncated: truncated || undefined
-        })
-        pendingTail = truncated
-        send({ type: 'done', truncated, usage: undefined })
+        }, targetChatId)
+        pendingTailByChat.set(targetChatId, truncated)
+        sendWithChatId({ type: 'done', truncated, usage: undefined })
         return
       }
     } finally {
-      if (currentAbort === ac) currentAbort = null
+      if (activeRuns.get(targetChatId) === ac) {
+        activeRuns.delete(targetChatId)
+      }
     }
   }
 
-  function abort() {
-    if (currentAbort) currentAbort.abort()
-    currentAbort = null
+  function abort(chatId) {
+    if (chatId) {
+      if (activeRuns.has(chatId)) {
+        activeRuns.get(chatId).abort()
+        activeRuns.delete(chatId)
+      }
+    } else {
+      for (const ac of activeRuns.values()) ac.abort()
+      activeRuns.clear()
+      if (autopilotAbort) {
+        autopilotAbort.abort()
+        autopilotAbort = null
+      }
+    }
   }
 
   /** Laeuft gerade ein Turn (User ODER Autopilot)? */
-  function isBusy() {
-    return !!currentAbort
+  function isBusy(chatId) {
+    if (chatId) return activeRuns.has(chatId)
+    return activeRuns.size > 0 || !!autopilotAbort
   }
 
   /**
@@ -543,9 +594,9 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
    * Aktionen (Animationen, Zeichnen ...) sind sichtbar.
    */
   async function runAutopilot(send, { silent = false } = {}) {
-    if (currentAbort) return
+    if (activeRuns.size > 0 || autopilotAbort) return
     const ac = new AbortController()
-    currentAbort = ac
+    autopilotAbort = ac
     try {
       const cfgChat = getCfg().chat
       const base = buildNormalizedRequest(budgetedRecords(cfgChat.maxHistoryTurns), !!cfgChat.toolsEnabled)
@@ -594,7 +645,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
         if (!silent) send({ type: 'tools' })
         // Budgets auch im Autopilot anwenden
         const { runnable, skipped } = budgetBatch(toolCalls, budgetState)
-        const toolCtx = buildToolCtx(cfgChat)
+        const toolCtx = buildToolCtx(cfgChat, 'default', send)
         const results = await Promise.all(
           runnable.map((tc) => toolsMod.executeTool(tc.name, tc.argsJson, toolCtx))
         )
@@ -614,13 +665,14 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
         }
       }
     } finally {
-      if (currentAbort === ac) currentAbort = null
+      if (autopilotAbort === ac) autopilotAbort = null
     }
   }
 
   /** "..." falls waehrend Verstecken noch etwas kam. */
-  function hasPendingTail() {
-    return pendingTail
+  function hasPendingTail(chatId) {
+    const targetId = chatId || history.getActiveChatId(userData) || 'default'
+    return !!pendingTailByChat.get(targetId)
   }
 
   return { runTurn, runAutopilot, abort, isBusy, hasPendingTail, supportsVision }

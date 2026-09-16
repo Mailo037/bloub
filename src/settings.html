@@ -3,436 +3,525 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings</title>
   <link rel="stylesheet" href="./settings.css" />
 </head>
 <body>
   <div id="card">
-    <header id="head">
-      <div id="head-row">
-        <h1>Settings</h1>
-        <span class="shortcut" aria-hidden="true">ctrl k</span>
-        <button id="search-toggle" class="no-drag" title="Search settings" aria-label="Search settings">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left Navigation Sidebar (Codex Desktop style) -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-head">
+        <div class="sidebar-title-row">
+          <h1>Settings</h1>
+          <span class="shortcut-badge" aria-hidden="true">Ctrl K</span>
+          <button type="button" id="sidebar-toggle" class="sidebar-icon-btn no-drag" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="sidebar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path class="sidebar-chevron" d="m16 9-3 3 3 3"/></svg>
+          </button>
+        </div>
+        <div class="sidebar-search-action">
+          <button type="button" id="search-toggle" class="sidebar-icon-btn no-drag" title="Search settings (Ctrl K)" aria-label="Search settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </button>
+        </div>
+        <div id="search-bar" class="search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
+          <input type="text" id="search-input" spellcheck="false" placeholder="Search settings…" />
+        </div>
+        <p id="search-status" class="search-status" aria-live="polite"></p>
+      </div>
+
+      <nav id="tabs" class="sidebar-nav no-drag" aria-label="Settings sections" role="tablist">
+        <button type="button" data-tab="connections" class="nav-item on" role="tab" aria-selected="true" aria-controls="pane-connections">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+          <span>Connections</span>
         </button>
-        <button id="close" class="no-drag" title="Close" aria-label="Close settings">×</button>
-      </div>
-      <div id="search-bar" class="hidden">
-        <input type="text" id="search-input" spellcheck="false" placeholder="Search settings…" />
-        <p id="search-status" aria-live="polite">Search every setting, guide and hotkey.</p>
-      </div>
-      <nav id="tabs" class="no-drag" aria-label="Settings sections" role="tablist">
-        <button type="button" data-tab="look" class="on" role="tab" aria-selected="true" aria-controls="pane-look">Appearance</button>
-        <button type="button" data-tab="chat" role="tab" aria-selected="false" aria-controls="pane-chat">Chat</button>
-        <button type="button" data-tab="audio" role="tab" aria-selected="false" aria-controls="pane-audio">Voice</button>
-        <button type="button" data-tab="pet" role="tab" aria-selected="false" aria-controls="pane-pet">Pet</button>
-        <button type="button" data-tab="recall" role="tab" aria-selected="false" aria-controls="pane-recall">Recall</button>
-        <button type="button" data-tab="about" role="tab" aria-selected="false" aria-controls="pane-about">About</button>
+        <button type="button" data-tab="look" class="nav-item" role="tab" aria-selected="false" aria-controls="pane-look">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+          </svg>
+          <span>Appearance</span>
+        </button>
+        <button type="button" data-tab="chat" class="nav-item" role="tab" aria-selected="false" aria-controls="pane-chat">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Chat &amp; Summon</span>
+        </button>
+        <button type="button" data-tab="audio" class="nav-item" role="tab" aria-selected="false" aria-controls="pane-audio">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span>Voice</span>
+        </button>
+        <button type="button" data-tab="pet" class="nav-item" role="tab" aria-selected="false" aria-controls="pane-pet">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <span>Pet &amp; System</span>
+        </button>
+        <button type="button" data-tab="recall" class="nav-item" role="tab" aria-selected="false" aria-controls="pane-recall">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+          <span>Activity Recall</span>
+        </button>
+        <button type="button" data-tab="about" class="nav-item" role="tab" aria-selected="false" aria-controls="pane-about">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>About</span>
+        </button>
       </nav>
-    </header>
+    </aside>
 
-    <main id="scroll">
-      <div id="pane-look" class="pane" role="tabpanel">
-        <section class="well collapsible open">
-          <h2 class="well-head"><span class="well-title">Avatar</span></h2>
-          <div class="well-body">
-            <div class="setting-block">
-              <div class="setting-copy">
-                <h3>Expression</h3>
-                <p>How Bloub reacts while it is on your desktop.</p>
+    <!-- Main Content Area -->
+    <div class="content-container">
+      <header class="titlebar-header">
+        <div class="titlebar-drag-area"></div>
+        <button id="close" class="close-btn no-drag" title="Close" aria-label="Close settings">×</button>
+      </header>
+
+      <main id="scroll" class="main-content">
+        <!-- CONNECTIONS PANE -->
+        <div id="pane-connections" class="pane" role="tabpanel">
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Chat Provider</span></h2>
+            <div class="well-body">
+              <label class="fld">Wire protocol
+                <div id="chat-protocol"></div>
+              </label>
+              <label class="fld">Base URL
+                <input type="text" id="chat-baseurl" spellcheck="false" placeholder="https://api.openai.com/v1" />
+              </label>
+              <label class="fld">Model
+                <input type="text" id="chat-model" spellcheck="false" placeholder="gpt-4o-mini" />
+              </label>
+              <div class="preference-row">
+                <div class="setting-copy"><label for="chat-apikey">API key</label><span id="chat-test-result" class="test-feedback"></span></div>
+                <div class="preference-controls"><input type="password" id="chat-apikey" placeholder="(not set)" /><button type="button" id="chat-test-btn" class="k-action-btn">Test connection</button></div>
               </div>
-              <div class="pills" id="expr-pills"></div>
             </div>
-            <div class="setting-block">
-              <div class="setting-copy">
-                <h3>Shape</h3>
-                <p>Pick the outline that feels most like your companion.</p>
+          </section>
+
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Voice connection</span></h2>
+            <div class="well-body">
+              <div class="preference-row">
+                <div class="setting-copy"><label for="audio-apikey">Gemini API key</label><p>Connect dictation and voice replies.</p><span id="audio-test-result" class="test-feedback"></span></div>
+                <div class="preference-controls"><input type="password" id="audio-apikey" placeholder="(not set)" /><button type="button" id="audio-test-btn" class="k-action-btn">Test connection</button></div>
               </div>
-              <div class="pills" id="shape-pills"></div>
             </div>
-            <div class="setting-block">
-              <div class="setting-copy">
-                <h3>Color</h3>
-                <p>Only the pet changes color; the interface stays neutral.</p>
+          </section>
+
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Conversational Memory</span></h2>
+            <div class="well-body">
+              <div class="setting-group">
+                <div id="memory-toggle-slot" class="toggle-slot"></div>
+                <p class="hint">Persistent memory remembers stable facts about you across separate chat sessions via memory_write and memory_get. Stored locally on this device in your user profile.</p>
               </div>
-              <div id="color-row"></div>
+              <div class="row-between">
+                <span class="hint">Archive or clear remembered conversation context.</span>
+                <button type="button" id="clear-memory-btn" class="k-action-btn danger">Archive chat memory</button>
+              </div>
             </div>
-            <div class="setting-block setting-size-block">
-              <div class="setting-copy setting-copy-inline">
-                <div>
-                  <h3>Size</h3>
-                  <p>Adjust the footprint of the pet.</p>
+          </section>
+        </div>
+
+        <!-- APPEARANCE PANE -->
+        <div id="pane-look" class="pane hidden" role="tabpanel">
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Avatar</span></h2>
+            <div class="well-body">
+              <div class="setting-block">
+                <div class="setting-copy">
+                  <h3>Expression</h3>
+                  <p>How Bloub reacts while on your desktop.</p>
                 </div>
-                <output id="size-val" class="size-val">200</output>
+                <div class="pills" id="expr-pills"></div>
               </div>
-              <input type="range" id="size-range" min="150" max="280" step="10" />
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div id="pane-chat" class="pane hidden" role="tabpanel">
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Endpoint</span></h2>
-          <div class="well-body">
-            <label class="fld">Base url <input type="text" id="chat-baseurl" spellcheck="false" placeholder="https://api.openai.com/v1" /></label>
-            <label class="fld">Wire protocol
-              <div id="chat-protocol"></div>
-            </label>
-            <label class="fld">Model <input type="text" id="chat-model" spellcheck="false" placeholder="gpt-4o-mini" /></label>
-            <label class="fld">Api key <input type="password" id="chat-apikey" placeholder="(not set)" /></label>
-            <div class="row-between">
-              <span id="chat-test-result"></span>
-              <button type="button" id="chat-test-btn">Test connection</button>
-            </div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Summon</span></h2>
-          <div class="well-body">
-            <label class="fld">Hotkey <input type="text" id="chat-hotkey" spellcheck="false" /></label>
-            <div class="row-between">
-              <span id="hotkey-status"></span>
-              <button type="button" id="hotkey-test-btn">Test</button>
-            </div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Behavior</span></h2>
-          <div class="well-body">
-            <div id="chat-tools-toggle-slot" class="toggle-slot"></div>
-            <div id="chat-voice-toggle-slot" class="toggle-slot"></div>
-            <label class="fld">Verbosity
-              <div id="chat-verbosity-slot"></div>
-            </label>
-            <p class="hint">How detailed the bloub's answers should be.</p>
-            <p class="hint">Drop a folder on the bloub to grant workspace access.</p>
-            <div id="grant-list"></div>
-            <button type="button" id="clear-memory-btn">Archive chat memory</button>
-          </div>
-        </section>
-      </div>
-
-      <div id="pane-audio" class="pane hidden" role="tabpanel">
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Voice engine (Gemini)</span></h2>
-          <div class="well-body">
-            <p class="hint">Separate Sprach-Engine — unabhaengig von deinem Chat-Provider. Gemini liefert Sprache-zu-Text (Mikro) und Text-zu-Sprache (Antworten).</p>
-            <label class="fld">Live model (for future realtime sessions)
-              <div id="audio-model-slot"></div>
-            </label>
-            <p class="hint">Speech-to-text and text-to-speech always use Google's matching models automatically (TTS: <i>gemini-3.1-flash-tts</i>, STT: <i>gemini-3.6-flash</i>). The model below is only stored for a future realtime (Live) session and is not used by the test or read-aloud buttons.</p>
-            <label class="fld">Gemini API key <input type="password" id="audio-apikey" placeholder="(not set)" /></label>
-            <div class="row-between">
-              <span id="audio-test-result"></span>
-              <button type="button" id="audio-test-btn" class="k-action-btn">Test connection</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Voice replies</span></h2>
-          <div class="well-body">
-            <div id="audio-voice-slot" class="toggle-slot"></div>
-            <p class="hint">After a chat reply, Bloub reads it aloud with Gemini's text-to-speech (if voice replies are enabled).</p>
-            <label class="fld">Voice
-              <div id="audio-voice-picker-slot"></div>
-            </label>
-            <div class="row-between">
-              <span id="audio-preview-result" class="hint"></span>
-              <button type="button" id="audio-preview-btn" class="k-action-btn">Preview voice</button>
-            </div>
-            <label class="fld">Push-to-talk hotkey <input type="text" id="audio-ptt" spellcheck="false" placeholder="Alt+X" /></label>
-            <p class="hint">Hold the hotkey to talk to Bloub — the input bar turns into a microphone while held. You can also click the microphone to start/stop (click again to mute &amp; send). The hotkey applies immediately, no restart needed.</p>
-          </div>
-        </section>
-
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Get a Gemini API key</span></h2>
-          <div class="well-body">
-            <p class="hint"><b>Free tier:</b> Gemini TTS and Live currently have a rate-limited free tier. With free-tier keys, submitted data may be used to improve Google's products. Paid projects have higher limits and their data is not used for that purpose.</p>
-            <ol class="guide-list">
-              <li>Open <button type="button" class="k-link-btn" id="audio-guide-aistudio">Google AI Studio</button> and sign in with a Google account.</li>
-              <li>Open the <button type="button" class="k-link-btn" id="audio-guide-pricing">Gemini API pricing page</button> and check the free tier limits for the model you picked.</li>
-              <li>In AI Studio → <b>Get API key</b> → <b>Create API key</b> — copy the key.</li>
-              <li>Paste it above and press <b>Test connection</b>.</li>
-            </ol>
-            <p class="hint">The free tier is currently available in the EU / EEA, UK and Switzerland too. Your actual model quota is shown in Google AI Studio and can change over time.</p>
-          </div>
-        </section>
-      </div>
-
-      <div id="pane-pet" class="pane hidden" role="tabpanel">
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Startup</span></h2>
-          <div class="well-body">
-            <div id="autostart-toggle-slot" class="toggle-slot"></div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Life</span></h2>
-          <div class="well-body">
-            <div id="events-toggle-slot" class="toggle-slot"></div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Autopilot</span></h2>
-          <div class="well-body">
-            <div id="autopilot-mode-slot"></div>
-            <label class="fld">Every
-              <div id="autopilot-interval-slot"></div>
-            </label>
-            <label class="fld">Chance
-              <div id="autopilot-chance-slot"></div>
-            </label>
-            <p class="hint">Periodically wakes the bloub and lets the AI decide on its own whether it wants to do something. The AI knows the user never asked. "Visible" shows its reply in the chat, "Silent" only shows actions — never text.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Actions</span></h2>
-          <div class="well-body">
-            <div id="memory-toggle-slot" class="toggle-slot"></div>
-            <p class="hint">Persistent memory: remembers stable facts about you across chat sessions via memory_write/memory_get. Stored locally in your user data folder.</p>
-            <div id="expr-access-slot" class="toggle-slot"></div>
-            <div id="anim-access-slot" class="toggle-slot"></div>
-            <div id="appear-access-slot" class="toggle-slot"></div>
-            <div id="draw-access-slot" class="toggle-slot"></div>
-            <label class="fld">Max tool calls per answer
-              <input type="number" id="max-tool-calls" min="1" max="60" step="1" />
-            </label>
-            <label class="fld">Max draw calls per answer
-              <input type="number" id="max-draw-calls" min="0" max="20" step="1" />
-            </label>
-            <p class="hint">Caps how many tools the bloub may call while working on one message (and how often it may draw). When a budget is hit, it just answers in text instead.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>File access</span></h2>
-          <div class="well-body">
-            <div id="file-access-slot" class="toggle-slot"></div>
-            <p class="hint">This sets what Bloub may do inside folders you have granted: read only, read and write, or no file tools.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Terminal</span></h2>
-          <div class="well-body">
-            <div id="terminal-toggle-slot" class="toggle-slot"></div>
-            <p id="terminal-access-status" class="access-status">Terminal commands are off.</p>
-            <p class="hint">This is separate from file access. When enabled, commands have a 30 second limit and shortened output.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Screens &amp; vision</span></h2>
-          <div class="well-body">
-            <div id="screenshot-all-slot" class="toggle-slot"></div>
-            <p class="hint">When the AI takes a screenshot, capture ALL connected monitors and stitch them into one image arranged by their real position. Each monitor region gets a small numbered badge (1, 2, …) in its top-left corner so the AI can tell the screens apart. Off = only the monitor next to the pet.</p>
-            <div id="global-cursor-slot" class="toggle-slot"></div>
-            <p class="hint">Let the bloub watch your cursor across every monitor (with a tiny display-ID tag), not just inside its own window.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Full drive access</span></h2>
-          <div class="well-body">
-            <div class="access-callout">
-              <div class="setting-copy">
-                <h3>C: drive</h3>
-                <p>Add or remove C:\ as a permanent file grant.</p>
+              <div class="setting-block">
+                <div class="setting-copy">
+                  <h3>Shape</h3>
+                  <p>Pick the outline that feels most like your companion.</p>
+                </div>
+                <div class="pills" id="shape-pills"></div>
               </div>
-              <button type="button" id="drive-access-btn" class="k-action-btn">Grant C:\ access</button>
+              <div class="setting-block">
+                <div class="setting-copy">
+                  <h3>Color</h3>
+                  <p>Only the pet changes color; the interface stays neutral.</p>
+                </div>
+                <div id="color-row"></div>
+              </div>
+              <div class="setting-block setting-size-block">
+                <div class="setting-copy setting-copy-inline">
+                  <div>
+                    <h3>Size</h3>
+                    <p>Adjust the footprint of the pet.</p>
+                  </div>
+                  <output id="size-val" class="size-val">200</output>
+                </div>
+                <input type="range" id="size-range" min="150" max="280" step="10" />
+              </div>
             </div>
-            <div id="drive-toggle-slot" class="toggle-slot"></div>
-            <p id="drive-access-status" class="access-status">C:\ is not granted.</p>
-            <p class="hint">Granting C:\ adds it to the file list with read and write access. It does not enable terminal commands; turn those on separately above.</p>
-          </div>
-        </section>
-        <section class="well danger-well collapsible open">
-          <h2 class="well-head"><span>Leave</span></h2>
-          <div class="well-body">
-            <button type="button" id="quit-btn">Quit pet</button>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
 
-      <div id="pane-recall" class="pane hidden" role="tabpanel">
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Activity recall</span></h2>
-          <div class="well-body">
-            <div id="recall-master-slot" class="toggle-slot"></div>
-            <p class="hint">When enabled, Bloub keeps a local record of what you do on this PC: terminal commands you execute, which apps you focus, and (optionally) web posts you send. Everything stays in this user-data folder — nothing is uploaded and the AI only sees it through bounded search tools. Recording is OFF until you turn it on.</p>
-            <div class="row-between tight">
+        <!-- CHAT & SUMMON PANE -->
+        <div id="pane-chat" class="pane hidden" role="tabpanel">
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Summon &amp; Shortcut</span></h2>
+            <div class="well-body">
+              <div class="preference-row"><div class="setting-copy"><label for="chat-hotkey">Hotkey</label><p>Open chat from anywhere.</p><span id="hotkey-status"></span></div><div class="preference-controls"><input type="text" id="chat-hotkey" spellcheck="false" /><button type="button" id="hotkey-test-btn" class="k-action-btn">Test hotkey</button></div></div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Behavior &amp; Workspace</span></h2>
+            <div class="well-body">
+              <div id="chat-tools-toggle-slot" class="toggle-slot"></div>
+              <div id="chat-voice-toggle-slot" class="toggle-slot"></div>
+              <div class="preference-row">
+                <div class="setting-copy"><span>Verbosity</span><p class="hint">How detailed Bloub's answers should be.</p></div>
+                <div id="chat-verbosity-slot"></div>
+              </div>
+              <div class="workspace-preference">
+                <div class="workspace-heading">Workspace access</div>
+                <p class="hint">Drop a folder on Bloub to grant workspace access.</p>
+                <div id="grant-list"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- VOICE PANE -->
+        <div id="pane-audio" class="pane hidden" role="tabpanel">
+          <section class="well open">
+            <h2 class="well-head"><span class="well-title">Transkription</span></h2>
+            <div class="well-body">
+              <div class="preference-row"><div class="setting-copy"><span>Sprache in Text</span><p>Für Diktate und Push-to-talk.</p></div><div id="transcription-provider-slot"></div></div>
+              <div id="transcription-openai-fields" class="setting-group">
+                <label class="fld">OpenAI API-Key<input id="transcription-key" type="password" autocomplete="off" placeholder="Nicht hinterlegt" /></label>
+                <p class="hint">gpt-4o-mini-transcribe · Reines Speech-to-Text-Modell. Audio wird zur Transkription an OpenAI gesendet.</p>
+                <p id="transcription-key-result" class="hint" role="status"></p>
+              </div>
+              <div id="transcription-local-fields" class="setting-group hidden">
+                <label class="fld">Lokale Server-Adresse<input id="transcription-local-url" type="url" spellcheck="false" placeholder="http://127.0.0.1:8080/inference" /></label>
+                <p class="hint">Benötigt einen laufenden whisper.cpp-Server mit geladenem mehrsprachigem Whisper-Modell. Audio bleibt auf diesem Gerät. Für WebM-Aufnahmen den Server mit --convert starten; dafür wird FFmpeg benötigt.</p>
+                <button type="button" class="k-link-btn" id="transcription-local-guide">Whisper-Einrichtung öffnen</button>
+              </div>
+            </div>
+          </section>
+          <section class="well collapsible open"><h2 class="well-head"><span class="well-title">Voice replies &amp; dictation</span></h2><div class="well-body">              <div id="audio-voice-slot" class="toggle-slot"></div>
+              <div class="preference-row">
+                <div class="setting-copy"><span>Voice</span><p>Choose how Bloub sounds.</p><span id="audio-preview-result" class="hint"></span></div>
+                <div class="preference-controls"><div id="audio-voice-picker-slot"></div><button type="button" id="audio-preview-btn" class="k-action-btn">Preview</button></div>
+              </div>
+              <label class="fld">Push-to-talk hotkey
+                <input type="text" id="audio-ptt" spellcheck="false" placeholder="Alt+X" />
+              </label>
+</div></section>
+          <section class="well open">
+            <h2 class="well-head"><span class="well-title">Zuletzt verwendete Aufnahmen</span></h2>
+            <div class="well-body">
+              <p class="hint">Die letzten 20 Diktate werden auf diesem Gerät gespeichert. Sprachchats sind ausgenommen.</p>
+              <div id="dictation-history" aria-live="polite"></div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Live-Sprachchat</span></h2>
+            <div class="well-body">
+              <label class="fld">Anbieter und Sprachmodell
+                <div id="audio-model-slot"></div>
+              </label>
+              <div class="setting-group">
+                <label class="fld" id="live-openai-key-row">OpenAI API-Key<input type="password" id="live-openai-key" autocomplete="off" placeholder="Nicht hinterlegt" /></label>
+                <p id="live-key-status" class="hint" role="status"></p>
+                <p class="hint">Gemini nutzt den Key aus Connections. Der OpenAI-Key wird auch für OpenAI-Transkription verwendet. GPT-Live 1 verwendet GPT-5.6 Luna für vertiefte Antworten. Der Live-Sprachchat führt keine lokalen Werkzeuge aus.</p>
+              </div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Get a Gemini API key</span></h2>
+            <div class="well-body">
+              <p class="hint"><b>Free tier:</b> Gemini TTS and Live currently have a rate-limited free tier. Submit your key in the Connections tab.</p>
+              <ol class="guide-list">
+                <li>Open <button type="button" class="k-link-btn" id="audio-guide-aistudio">Google AI Studio</button> and sign in with a Google account.</li>
+                <li>Open the <button type="button" class="k-link-btn" id="audio-guide-pricing">Gemini API pricing page</button> and check the free tier limits.</li>
+                <li>In AI Studio → <b>Get API key</b> → <b>Create API key</b> — copy the key.</li>
+                <li>Paste it in Connections → Voice Engine.</li>
+              </ol>
+            </div>
+          </section>
+        </div>
+
+        <!-- PET PANE -->
+        <div id="pane-pet" class="pane hidden" role="tabpanel">
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Startup &amp; Life</span></h2>
+            <div class="well-body">
+              <div id="autostart-toggle-slot" class="toggle-slot"></div>
+              <div id="events-toggle-slot" class="toggle-slot"></div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Autopilot</span></h2>
+            <div class="well-body">
+              <div class="preference-row">
+                <div class="setting-copy"><span>Mode</span><p class="hint">Periodically wakes the pet and lets the AI decide on its own whether it wants to do something.</p></div>
+                <div id="autopilot-mode-slot"></div>
+              </div>
+              <label class="fld">Every
+                <div id="autopilot-interval-slot"></div>
+              </label>
+              <label class="fld">Chance
+                <div id="autopilot-chance-slot"></div>
+              </label>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Pet Actions &amp; Budgets</span></h2>
+            <div class="well-body">
+              <div id="expr-access-slot" class="toggle-slot"></div>
+              <div id="anim-access-slot" class="toggle-slot"></div>
+              <div id="appear-access-slot" class="toggle-slot"></div>
+              <div id="draw-access-slot" class="toggle-slot"></div>
+              <label class="fld">Max tool calls per answer
+                <input type="number" id="max-tool-calls" min="1" max="60" step="1" />
+              </label>
+              <label class="fld">Max draw calls per answer
+                <input type="number" id="max-draw-calls" min="0" max="20" step="1" />
+              </label>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">File &amp; Terminal Access</span></h2>
+            <div class="well-body">
+              <div id="file-access-slot" class="toggle-slot"></div>
+              <div class="setting-group">
+                <div id="terminal-toggle-slot" class="toggle-slot"></div>
+                <p id="terminal-access-status" class="access-status">Terminal commands are off.</p>
+              </div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Screens &amp; Vision</span></h2>
+            <div class="well-body">
+              <div id="screenshot-all-slot" class="toggle-slot"></div>
+              <div id="global-cursor-slot" class="toggle-slot"></div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Full Drive Access</span></h2>
+            <div class="well-body">
+              <div class="access-callout">
+                <div class="setting-copy">
+                  <h3>C: drive</h3>
+                  <p>Add or remove C:\ as a permanent file grant.</p>
+                </div>
+                <button type="button" id="drive-access-btn" class="k-action-btn">Grant C:\ access</button>
+              </div>
+              <div class="setting-group">
+                <div id="drive-toggle-slot" class="toggle-slot"></div>
+                <p id="drive-access-status" class="access-status">C:\ is not granted.</p>
+              </div>
+            </div>
+          </section>
+          <section class="well danger-well collapsible open">
+            <h2 class="well-head"><span class="well-title">Leave</span></h2>
+            <div class="well-body">
+              <button type="button" id="quit-btn" class="k-action-btn danger">Quit pet</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- RECALL PANE -->
+        <div id="pane-recall" class="pane hidden" role="tabpanel">
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Activity Recall</span></h2>
+            <div class="well-body">
+              <div class="setting-group">
+                <div id="recall-master-slot" class="toggle-slot"></div>
+                <p class="hint">When enabled, Bloub keeps a local record of what you do on this PC. Everything stays in this user-data folder.</p>
+              </div>
+              <div class="row-between tight">
+                <div class="recall-status-row">
+                  <span class="recall-status-dot" id="recall-pause-dot"></span>
+                  <span id="recall-pause-indicator">Recording</span>
+                </div>
+                <button type="button" id="recall-pause-btn" class="k-action-btn" disabled>Pause now</button>
+              </div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Terminal Capture</span></h2>
+            <div class="well-body">
+              <div id="recall-shell-slot" class="toggle-slot"></div>
               <div class="recall-status-row">
-                <span class="recall-status-dot" id="recall-pause-dot"></span>
-                <span id="recall-pause-indicator">Recording</span>
+                <span class="recall-status-dot" id="recall-shell-dot"></span>
+                <span id="recall-shell-status">checking…</span>
               </div>
-              <button type="button" id="recall-pause-btn" class="k-action-btn" disabled>Pause now</button>
-            </div>
-            <p class="hint">Hotkey Ctrl+Alt+P pauses/resumes instantly. Recording also auto-pauses while a password or banking window is focused.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Terminal capture</span></h2>
-          <div class="well-body">
-            <div id="recall-shell-slot" class="toggle-slot"></div>
-            <p class="hint">Records commands AFTER you run them — never the keystrokes while typing. Needs a small hook in your PowerShell profile (installed below).</p>
-            <div class="recall-status-row">
-              <span class="recall-status-dot" id="recall-shell-dot"></span>
-              <span id="recall-shell-status">checking…</span>
-            </div>
-            <div class="recall-btn-row">
-              <button type="button" id="recall-shell-install-btn" class="k-action-btn">Install profile hooks</button>
-              <button type="button" id="recall-shell-remove-btn" class="k-action-btn danger">Remove hooks</button>
-            </div>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Browser link</span></h2>
-          <div class="well-body">
-            <label class="fld">Mode
-              <div id="recall-browser-slot"></div>
-            </label>
-            <p class="hint" id="recall-browser-hint">Off: only window titles of browser windows are recorded (via app focus).</p>
-            <div id="recall-extension-row" class="recall-btn-row" style="display:none">
-              <span id="recall-ext-status"></span>
-              <span class="recall-btn-row">
-                <button type="button" id="recall-ext-btn" class="k-action-btn">Prepare extension folder</button>
-                <button type="button" id="recall-ext-github-btn" class="k-action-btn">bloub-link (ZIP) ↗</button>
-              </span>
-            </div>
-            <p class="hint">Only YOUR outbound actions (form sends, posts) are captured. Passwords and payment fields are never recorded. Incognito tabs are excluded. No extension is ever installed without your clicks inside Chrome's own UI.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Clipboard</span></h2>
-          <div class="well-body">
-            <div id="recall-clipboard-slot" class="toggle-slot"></div>
-            <p class="hint">Keep the last 200 text clipboard entries (10 KB each), skipped entirely while a password-manager window has focus. Off by default.</p>
-          </div>
-        </section>
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Storage</span></h2>
-          <div class="well-body">
-            <div class="recall-stats" id="recall-storage-stats">
-              <div class="recall-stat">
-                <span class="recall-stat-num" id="recall-storage-events">—</span>
-                <span class="recall-stat-label">Events</span>
-              </div>
-              <div class="recall-stat">
-                <span class="recall-stat-num" id="recall-storage-size">—</span>
-                <span class="recall-stat-label">On disk</span>
-              </div>
-              <div class="recall-stat">
-                <span class="recall-stat-num" id="recall-storage-oldest">—</span>
-                <span class="recall-stat-label">Oldest event</span>
+              <div class="recall-btn-row">
+                <button type="button" id="recall-shell-install-btn" class="k-action-btn">Install profile hooks</button>
+                <button type="button" id="recall-shell-remove-btn" class="k-action-btn danger">Remove hooks</button>
               </div>
             </div>
-            <label class="fld">Retention
-              <span class="fld-suffix">
-                <input type="number" id="recall-retention" min="1" max="365" step="1" />
-                <span class="fld-unit">days</span>
-              </span>
-            </label>
-            <p class="hint">Events older than this are purged automatically at every indexing pass (hourly).</p>
-            <div class="recall-storage-actions">
-              <button type="button" id="recall-index-now-btn" class="k-action-btn">Index now</button>
-              <button type="button" id="recall-purge-btn" class="k-action-btn danger">Purge everything</button>
-            </div>
-            <p id="recall-storage-line" class="recall-storage-msg"></p>
-          </div>
-        </section>
-      </div>
-
-      <div id="pane-about" class="pane hidden" role="tabpanel">
-        <section class="well about-hero-well collapsible open">
-          <h2 class="well-head"><span>About</span></h2>
-          <div class="well-body">
-            <div class="about-hero">
-              <div id="about-avatar-preview"></div>
-              <div class="about-hero-text">
-                <div class="about-title-row">
-                  <h2 id="about-app-name">Bloub Pet</h2>
-                  <span class="version-tag" id="about-app-version">v1.1.2</span>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Browser Link</span></h2>
+            <div class="well-body">
+              <div class="setting-group">
+                <div class="preference-row">
+                  <div class="setting-copy"><span>Mode</span></div>
+                  <div id="recall-browser-slot"></div>
                 </div>
-                <p class="about-desc">Interactive AI desktop pet companion powered by the Bloub avatar engine.</p>
+                <p class="hint" id="recall-browser-hint">Off: only window titles of browser windows are recorded.</p>
+              </div>
+              <div id="recall-extension-row" class="recall-btn-row" style="display:none">
+                <span id="recall-ext-status"></span>
+                <span class="recall-btn-row">
+                  <button type="button" id="recall-ext-btn" class="k-action-btn">Prepare extension folder</button>
+                  <button type="button" id="recall-ext-github-btn" class="k-action-btn">bloub-link (ZIP) ↗</button>
+                </span>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Software Updates</span></h2>
-          <div class="well-body">
-            <div class="update-box">
-              <div class="update-mode-line" id="update-mode-line">—</div>
-              <div class="update-header">
-                <div class="update-status-wrap">
-                  <span class="update-indicator" id="update-indicator"></span>
-                  <span id="update-status-text">Click to check for updates</span>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Clipboard</span></h2>
+            <div class="well-body">
+              <div id="recall-clipboard-slot" class="toggle-slot"></div>
+            </div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Storage</span></h2>
+            <div class="well-body">
+              <div class="recall-stats" id="recall-storage-stats">
+                <div class="recall-stat">
+                  <span class="recall-stat-num" id="recall-storage-events">—</span>
+                  <span class="recall-stat-label">Events</span>
                 </div>
-                <button type="button" id="check-updates-btn" class="k-action-btn">
-                  <span>Check updates</span>
-                </button>
-              </div>
-
-              <div id="update-details-card" class="update-card hidden">
-                <div class="update-card-title-row">
-                  <strong id="update-card-title"></strong>
-                  <span id="update-card-date" class="update-date"></span>
+                <div class="recall-stat">
+                  <span class="recall-stat-num" id="recall-storage-size">—</span>
+                  <span class="recall-stat-label">On disk</span>
                 </div>
-                <div id="update-card-notes" class="update-notes"></div>
-                <div class="update-card-actions">
-                  <button type="button" id="install-update-btn" class="k-action-btn primary">Install update</button>
-                  <button type="button" id="view-release-btn" class="k-action-btn secondary">Release notes</button>
+                <div class="recall-stat">
+                  <span class="recall-stat-num" id="recall-storage-oldest">—</span>
+                  <span class="recall-stat-label">Oldest event</span>
                 </div>
               </div>
+              <label class="fld">Retention
+                <span class="fld-suffix">
+                  <input type="number" id="recall-retention" min="1" max="365" step="1" />
+                  <span class="fld-unit">days</span>
+                </span>
+              </label>
+              <div class="recall-storage-actions">
+                <button type="button" id="recall-index-now-btn" class="k-action-btn">Index now</button>
+                <button type="button" id="recall-purge-btn" class="k-action-btn danger">Purge everything</button>
+              </div>
+              <p id="recall-storage-line" class="recall-storage-msg"></p>
+            </div>
+          </section>
+        </div>
 
-              <div id="update-progress-wrap" class="update-progress-wrap hidden">
-                <div class="update-progress-bar">
-                  <div id="update-progress-fill" class="update-progress-fill" style="width: 0%"></div>
+        <!-- ABOUT PANE -->
+        <div id="pane-about" class="pane hidden" role="tabpanel">
+          <section class="well about-hero-well collapsible open">
+            <h2 class="well-head"><span class="well-title">About</span></h2>
+            <div class="well-body">
+              <div class="about-hero">
+                <div id="about-avatar-preview"></div>
+                <div class="about-hero-text">
+                  <div class="about-title-row">
+                    <h2 id="about-app-name">Bloub Pet</h2>
+                    <span class="version-tag" id="about-app-version">v1.1.2</span>
+                  </div>
+                  <p class="about-desc">Interactive AI desktop pet companion powered by the Bloub avatar engine.</p>
                 </div>
-                <span id="update-progress-text" class="update-progress-text"></span>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>System &amp; Specifications</span></h2>
-          <div class="well-body">
-            <div class="specs-grid" id="specs-grid">
-              <div class="spec-row"><span class="spec-key">Run Mode</span><span class="spec-val" id="spec-run-mode">—</span></div>
-              <div class="spec-row"><span class="spec-key">Operating System</span><span class="spec-val" id="spec-os">—</span></div>
-              <div class="spec-row"><span class="spec-key">Architecture</span><span class="spec-val" id="spec-arch">—</span></div>
-              <div class="spec-row"><span class="spec-key">Electron</span><span class="spec-val" id="spec-electron">—</span></div>
-              <div class="spec-row"><span class="spec-key">Chromium</span><span class="spec-val" id="spec-chrome">—</span></div>
-              <div class="spec-row"><span class="spec-key">Node.js</span><span class="spec-val" id="spec-node">—</span></div>
-              <div class="spec-row"><span class="spec-key">V8 Engine</span><span class="spec-val" id="spec-v8">—</span></div>
-              <div class="spec-row"><span class="spec-key">Memory</span><span class="spec-val" id="spec-mem">—</span></div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Software Updates</span></h2>
+            <div class="well-body">
+              <div class="update-box">
+                <div class="update-mode-line" id="update-mode-line">—</div>
+                <div class="update-header">
+                  <div class="update-status-wrap">
+                    <span class="update-indicator" id="update-indicator"></span>
+                    <span id="update-status-text">Click to check for updates</span>
+                  </div>
+                  <button type="button" id="check-updates-btn" class="k-action-btn">
+                    <span>Check updates</span>
+                  </button>
+                </div>
+                <div id="update-details-card" class="update-card hidden">
+                  <div class="update-card-title-row">
+                    <strong id="update-card-title"></strong>
+                    <span id="update-card-date" class="update-date"></span>
+                  </div>
+                  <div id="update-card-notes" class="update-notes"></div>
+                  <div class="update-card-actions">
+                    <button type="button" id="install-update-btn" class="k-action-btn primary">Install update</button>
+                    <button type="button" id="view-release-btn" class="k-action-btn secondary">Release notes</button>
+                  </div>
+                </div>
+                <div id="update-progress-wrap" class="update-progress-wrap hidden">
+                  <div class="update-progress-bar">
+                    <div id="update-progress-fill" class="update-progress-fill" style="width: 0%"></div>
+                  </div>
+                  <span id="update-progress-text" class="update-progress-text"></span>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
-
-        <section class="well collapsible open">
-          <h2 class="well-head"><span>Resources &amp; Links</span></h2>
-          <div class="well-body">
-            <div class="links-row">
-              <button type="button" class="k-link-btn" id="link-github">GitHub</button>
-              <button type="button" class="k-link-btn" id="link-releases">Releases</button>
-              <button type="button" class="k-link-btn" id="link-issues">Issues</button>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">System &amp; Specifications</span></h2>
+            <div class="well-body">
+              <div class="specs-grid" id="specs-grid">
+                <div class="spec-row"><span class="spec-key">Run Mode</span><span class="spec-val" id="spec-run-mode">—</span></div>
+                <div class="spec-row"><span class="spec-key">Operating System</span><span class="spec-val" id="spec-os">—</span></div>
+                <div class="spec-row"><span class="spec-key">Architecture</span><span class="spec-val" id="spec-arch">—</span></div>
+                <div class="spec-row"><span class="spec-key">Electron</span><span class="spec-val" id="spec-electron">—</span></div>
+                <div class="spec-row"><span class="spec-key">Chromium</span><span class="spec-val" id="spec-chrome">—</span></div>
+                <div class="spec-row"><span class="spec-key">Node.js</span><span class="spec-val" id="spec-node">—</span></div>
+                <div class="spec-row"><span class="spec-key">V8 Engine</span><span class="spec-val" id="spec-v8">—</span></div>
+                <div class="spec-row"><span class="spec-key">Memory</span><span class="spec-val" id="spec-mem">—</span></div>
+              </div>
             </div>
-          </div>
-        </section>
-      </div>
-
-    </main>
-    <!-- sichtbarer Griff unten rechts; das Ziehen selbst uebernehmen die Randzonen -->
-    <div id="grip" aria-hidden="true"></div>
+          </section>
+          <section class="well collapsible open">
+            <h2 class="well-head"><span class="well-title">Resources &amp; Links</span></h2>
+            <div class="well-body">
+              <div class="links-row">
+                <button type="button" class="resource-link" id="link-github"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path fill="currentColor" stroke="none" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.82c.85 0 1.71.11 2.51.34 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.6 1.03 2.69 0 3.84-2.34 4.69-4.58 4.94.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg><span class="resource-copy"><span>GitHub</span><small>Source code and project</small></span><svg class="resource-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button>
+                <button type="button" class="resource-link" id="link-releases"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 13l-7 7a2 2 0 0 1-3 0l-7-7V3h10l7 7a2 2 0 0 1 0 3Z"/><circle cx="7.5" cy="7.5" r="1"/></svg><span class="resource-copy"><span>Releases</span><small>Versions and downloads</small></span><svg class="resource-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button>
+                <button type="button" class="resource-link" id="link-issues"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/></svg><span class="resource-copy"><span>Issues</span><small>Report a bug or suggest a feature</small></span><svg class="resource-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+      <div id="grip" aria-hidden="true"></div>
+    </div>
   </div>
-  <!--
-    Ziehzonen am FENSTERRAND statt an der Karte: Faellt das Acrylic aus, ist der
-    sichtbare Rand die Fensterkante, nicht die Kartenkante (8px Margin).
-  -->
+
+  <!-- Resize zones -->
   <div class="rz rz-n" data-dir="n" aria-hidden="true"></div>
   <div class="rz rz-s" data-dir="s" aria-hidden="true"></div>
   <div class="rz rz-e" data-dir="e" aria-hidden="true"></div>
@@ -441,6 +530,7 @@
   <div class="rz rz-nw" data-dir="nw" aria-hidden="true"></div>
   <div class="rz rz-se" data-dir="se" aria-hidden="true"></div>
   <div class="rz rz-sw" data-dir="sw" aria-hidden="true"></div>
+
   <script type="module" src="./settings.ts"></script>
 </body>
 </html>

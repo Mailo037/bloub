@@ -450,6 +450,7 @@ function tickDisplayTag(
   return
 }
 
+const caretMeasure = document.createElement('canvas').getContext('2d')!
 function tickGaze(dt: number) {
   // Waehrend einer Custom-Expression-Animation steuert die Animation das
   // Gesicht — der Cursor-Suchlauf darf nicht dazwischenfunken.
@@ -534,7 +535,16 @@ function tickGaze(dt: number) {
   const inGracePeriod = clock < dragGraceUntil
   const nowMs = performance.now()
   const gFresh = globalCursor && nowMs - globalCursor.at < GLOBAL_CURSOR_FRESH_MS ? globalCursor : null
-  const lookPt = gFresh ?? pointer
+  const writing = document.querySelector<HTMLTextAreaElement>('#chat-input')
+  let contentLook: { x: number; y: number } | null = null
+  if (writing && document.activeElement === writing && !chatDock.classList.contains('pet-compact')) {
+    const rect = writing.getBoundingClientRect()
+    const measure = caretMeasure
+    measure.font = getComputedStyle(writing).font
+    const line = writing.value.slice(0, writing.selectionStart).split('\n').pop() || ''
+    contentLook = { x: rect.left + Math.min(rect.width - 10, 8 + measure.measureText(line).width), y: rect.top + rect.height / 2 }
+  }
+  const lookPt = contentLook ?? gFresh ?? pointer
   const pointerIsRecent =
     nowMs - Math.max(lastPointerMoveTime, gFresh?.at ?? 0) < 3500
   const canAim = !dragging && !inGracePeriod && !!geo && !!lookPt && (def?.baseFace ?? false)
@@ -549,7 +559,7 @@ function tickGaze(dt: number) {
     // virtuelle Desktop (beide Screens "zusammengefuert"); ohne ihn (alter
     // Fallback) gilt wie bisher die enge Radius-Regel des eigenen Fensters.
     const nearEnough = gFresh ? true : dist <= Math.max(geo.r * 4.5, 340)
-    active = (nearEnough && pointerIsRecent) || settingsOpen
+    active = !!contentLook || (nearEnough && pointerIsRecent) || settingsOpen
   }
 
   hoverT = clamp(hoverT + (active ? dt / 0.5 : -dt / 0.9))

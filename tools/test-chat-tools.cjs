@@ -141,16 +141,23 @@ async function main() {
   const customBadKind = await tools.executeTool('pet_custom_animate', JSON.stringify({ kind: 'dance', duration: 1, note: 'x' }), petCtx)
   check('pet_custom_animate kind enum enforced', customBadKind.isError === true)
 
-  // TOOLS_FOR_MODEL
-  check('tools listed with grants read', tools.TOOLS_FOR_MODEL(grants, 'read').length === 16)
-  check('tools listed with grants read + shell', tools.TOOLS_FOR_MODEL(grants, 'read', { shellEnabled: true }).length === 17)
-  check('tools listed with grants read + memory', tools.TOOLS_FOR_MODEL(grants, 'read', { memoryEnabled: true }).length === 18)
-  check('tools listed with grants read + both', tools.TOOLS_FOR_MODEL(grants, 'read', { shellEnabled: true, memoryEnabled: true }).length === 19)
-  check('tools listed with grants readwrite + both', tools.TOOLS_FOR_MODEL(grants, 'readwrite', { shellEnabled: true, memoryEnabled: true }).length === 21)
-  check('tools listed with grants none', tools.TOOLS_FOR_MODEL(grants, 'none').length === 13)
-  check('pet tools listed without grants', tools.TOOLS_FOR_MODEL([]).length === 13)
-  check('pet tools without grants + memory', tools.TOOLS_FOR_MODEL([], 'read', { memoryEnabled: true }).length === 15)
-  check('pet tools without grants + shell', tools.TOOLS_FOR_MODEL([], 'read', { shellEnabled: true }).length === 14)
+  // TOOLS_FOR_MODEL (now includes chat_set_title)
+  check('tools listed with grants read', tools.TOOLS_FOR_MODEL(grants, 'read').length === 17)
+  check('tools listed with grants read + shell', tools.TOOLS_FOR_MODEL(grants, 'read', { shellEnabled: true }).length === 18)
+  check('tools listed with grants read + memory', tools.TOOLS_FOR_MODEL(grants, 'read', { memoryEnabled: true }).length === 19)
+  check('tools listed with grants read + both', tools.TOOLS_FOR_MODEL(grants, 'read', { shellEnabled: true, memoryEnabled: true }).length === 20)
+  check('tools listed with grants readwrite + both', tools.TOOLS_FOR_MODEL(grants, 'readwrite', { shellEnabled: true, memoryEnabled: true }).length === 22)
+  check('tools listed with grants none', tools.TOOLS_FOR_MODEL(grants, 'none').length === 14)
+  check('pet tools listed without grants', tools.TOOLS_FOR_MODEL([]).length === 14)
+  check('pet tools without grants + memory', tools.TOOLS_FOR_MODEL([], 'read', { memoryEnabled: true }).length === 16)
+  check('pet tools without grants + shell', tools.TOOLS_FOR_MODEL([], 'read', { shellEnabled: true }).length === 15)
+
+  // chat_set_title tool test
+  let renamedTo = ''
+  const setTitleRes = await tools.executeTool('chat_set_title', JSON.stringify({ title: 'New Chat Title Here Now Extra Words' }), {
+    onRenameChat: async (t) => { renamedTo = t }
+  })
+  check('chat_set_title ok and capped to 5 words', setTitleRes.ok && renamedTo === 'New Chat Title Here Now')
 
   // Write-Tools: fs_write + fs_edit
   const rwCtx = { grants, fileAccess: 'readwrite' }

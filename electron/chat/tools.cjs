@@ -1085,7 +1085,7 @@ const MEMORY_WRITE = defineTool({
     additionalProperties: false
   },
   async execute(args, ctx) {
-    if (!ctx?.memoryFilePath) {
+    if (!ctx?.memoryFilePath || ctx?.memoryEnabled === false) {
       return { ok: false, content: 'memory disabled — enable "Memory" in Pad settings first', isError: true }
     }
     const data = loadMemory(ctx) || {}
@@ -1118,7 +1118,7 @@ const MEMORY_GET = defineTool({
     additionalProperties: false
   },
   async execute(args, ctx) {
-    if (!ctx?.memoryFilePath) {
+    if (!ctx?.memoryFilePath || ctx?.memoryEnabled === false) {
       return { ok: false, content: 'memory disabled — enable "Memory" in Pad settings first', isError: true }
     }
     const data = loadMemory(ctx) || {}
@@ -1197,8 +1197,33 @@ function defineTool(def) {
   return def
 }
 
+const CHAT_SET_TITLE = defineTool({
+  name: 'chat_set_title',
+  description:
+    'Set or regenerate the short title of the current chat conversation. ' +
+    'Provide a concise title of at most 5 words without quotes or ending period.',
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1, maxLength: 60, description: 'The new title (max 5 words).' },
+      note: { type: 'string', description: 'Short human-readable activity note.' }
+    },
+    required: ['title'],
+    additionalProperties: false
+  },
+  async execute(args, ctx) {
+    const raw = (args.title || '').trim()
+    const words = raw.split(/\s+/).filter(Boolean).slice(0, 5)
+    const title = words.join(' ').replace(/[.,:;!?]+$/, '')
+    if (typeof ctx?.onRenameChat === 'function') {
+      await ctx.onRenameChat(title)
+    }
+    return { ok: true, content: `Chat title set to: "${title}"` }
+  }
+})
+
 const PET_TOOLS = [PET_GET_STATE, PET_SET_SHAPE, PET_SET_EXPRESSION, PET_ANIMATE, PET_STOP_ANIMATION, PET_SET_COLOR, PET_SET_SIZE, PET_CUSTOM_ANIMATE, PET_DRAW_PATH]
-const SYS_TOOLS = [SYS_INFO, SYS_FOCUSED_APP, SYS_MEDIA_INFO, SYS_SCREENSHOT, SHELL_EXEC]
+const SYS_TOOLS = [SYS_INFO, SYS_FOCUSED_APP, SYS_MEDIA_INFO, SYS_SCREENSHOT, SHELL_EXEC, CHAT_SET_TITLE]
 const MEMORY_TOOLS = [MEMORY_WRITE, MEMORY_GET]
 const FS_READ_TOOLS = [FS_TREE, FS_READ, FS_SEARCH]
 const FS_WRITE_TOOLS = [FS_WRITE, FS_EDIT]

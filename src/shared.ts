@@ -99,6 +99,8 @@ export interface ChatConfig {
   autoPilotInterval: number
   /** Autopilot-Wahrscheinlichkeit pro Tick in Prozent (0-100). */
   autoPilotChance: number
+  /** Denkaufwand-Stufe des Modells: off | minimal | low | medium | high | xhigh. */
+  reasoningLevel?: string
 }
 
 export type PetConfigShape = {
@@ -135,6 +137,8 @@ export interface AudioConfig {
   voiceEnabled: boolean
   /** Push-to-Talk-Hotkey (z. B. 'Alt+C'). */
   pttHotkey: string
+  /** Live-Sprach-Engine: 'gemini' | 'openai'. */
+  liveProvider?: string
 }
 
 export type SpeechStreamEvent =
@@ -199,23 +203,59 @@ export interface AttachChip {
   note?: string
 }
 
-/** Normalisierte Events des Agent-Loops, per IPC an chatWin. */
+/** Metadaten-Übersicht eines gespeicherten Chats (chat:list, history.listChats). */
+export interface ChatSummary {
+  id: string
+  title: string
+  createdAt?: number
+  updatedAt?: number
+  messageCount?: number
+  /** Letzter Datensatz gekürzt auf 100 Zeichen. */
+  lastMessage?: string
+  lastSnippet?: string
+}
+
+/** Treffer der Chat-Suche (chat:search, history.searchChats). */
+export interface ChatSearchResult {
+  id: string
+  title: string
+  snippet?: string
+  createdAt?: number
+  updatedAt?: number
+  messageCount?: number
+  matches?: number
+}
+
+/** Ein gespeicherter Verlaufs-Datensatz (chat:get, history.getChat). */
+export interface ChatRecord {
+  role: string
+  content?: string
+  parts?: Array<{ type: string; text?: string }>
+}
+
+export interface ChatDetail extends ChatSummary {
+  records: ChatRecord[]
+}
+
+/** Normalisierte Events des Agent-Loops, per IPC an chatWin/petWin. */
 export type ChatEvent =
-  | { type: 'accepted'; chipText: string; attachments: string[] }
-  | { type: 'status'; text: string }
+  | { type: 'accepted'; chipText: string; attachments: string[]; chatId?: string }
+  | { type: 'status'; text: string; chatId?: string }
   /** Menschenlesbare Aktivitaets-Notiz der AI (z. B. "adding a little life ✨") — wird UEBER der Antwort gerendert und zaehlt nicht als Antwort. */
-  | { type: 'note'; text: string }
-  | { type: 'token'; text: string }
+  | { type: 'note'; text: string; chatId?: string }
+  | { type: 'token'; text: string; chatId?: string }
   /** Tool-Batch beginnt auszufuehren — der Bloub denkt wieder, auch mitten im Stream. */
-  | { type: 'tools' }
+  | { type: 'tools'; chatId?: string }
   /** Neuer Text-Segment beginnt (nach Tool-Calls): alten Antwort-Text verwerfen. */
-  | { type: 'clear' }
-  | { type: 'done'; truncated: boolean }
-  | { type: 'error'; message: string }
-  | { type: 'attachments'; chips: AttachChip[] }
-  | { type: 'pending-tail' }
+  | { type: 'clear'; chatId?: string }
+  | { type: 'done'; truncated: boolean; usage?: unknown; chatId?: string }
+  | { type: 'error'; message: string; chatId?: string }
+  | { type: 'attachments'; chips: AttachChip[]; chatId?: string }
+  | { type: 'pending-tail'; chatId?: string }
   /** Chat-Memory wurde archiviert (Settings "Archive & clear") — letzte Antwort aus der UI entfernen. */
-  | { type: 'archived' }
+  | { type: 'archived'; chatId?: string }
+  /** Auto-Titel des Chats wurde neu gesetzt. */
+  | { type: 'title'; title: string; chatId?: string }
 
 export interface AppSpecs {
   appName: string
@@ -303,10 +343,10 @@ export interface PetBridge {
   /** Globaler Cursor (alle Monitore), vom Main-Prozess gepollt. */
   onGlobalCursor?(cb: (p: GlobalCursorInfo) => void): void
   /* chat window */
-  sendChat?(payload: { text: string; attachmentIds: string[] }): Promise<boolean>
+  sendChat?(payload: { text: string; attachmentIds: string[]; chatId?: string }): Promise<boolean>
   /** Chat-Dock IMMER oeffnen (Kontextmenue "Open input") — togglet nie. */
   showChat?(): void
-  abortChat?(): void
+  abortChat?(chatId?: string): void
   hideChat?(): void
   onChatEvent?(cb: (ev: ChatEvent) => void): void
   testProvider?(): Promise<{ ok: boolean; error?: string }>
@@ -317,6 +357,22 @@ export interface PetBridge {
   testHotkey?(combo: string): Promise<{ ok: boolean; activeHotkey: string | null }>
   setGrantSecrets?(path: string, allowSecrets: boolean): Promise<Grant[]>
   removeGrant?(path: string): Promise<Grant[]>
+  /** Externes Chatfenster oeffnen bzw. dessen Fenstersteuerung. */
+  openChatWindow?(): void
+  minimizeChatWindow?(): void
+  maximizeChatWindow?(): void
+  closeChatWindow?(): void
+  /* multi-chat history */
+  listChats?(): Promise<ChatSummary[]>
+  getChat?(id: string): Promise<ChatDetail | null>
+  newChat?(title?: string): Promise<ChatSummary>
+  selectChat?(id: string): Promise<void>
+  renameChat?(id: string, title: string): Promise<void>
+  archiveChat?(id: string): Promise<void>
+  deleteChat?(id: string): Promise<boolean>
+  searchChats?(query: string): Promise<ChatSearchResult[]>
+  regenerateChatTitle?(id: string): Promise<string | null>
+  getActiveChat?(): Promise<string>
   /* activity recall */
   recallGetStatus?(): Promise<RecallStatus & { config: Partial<RecallConfig> }>
   recallSetConfig?(partial: Partial<RecallConfig>): Promise<{ config: Partial<RecallConfig> } & RecallStatus>
@@ -333,13 +389,20 @@ export interface PetBridge {
   setAudioPttHotkey?(combo: string | null): Promise<{ activeHotkey: string | null }>
   testAudioConnection?(): Promise<{ ok: boolean; error?: string }>
   /** Audio-Blob (base64) an Gemini-STT im Main schicken -> { ok, text, error }. */
-  transcribeAudio?(payload: { mime?: string; data: string }): Promise<{ ok: boolean; text: string; error?: string }>
+  transcribeAudio?(payload: { mime?: string; data: string; source?: string }): Promise<{ ok: boolean; text: string; error?: string }>
   /** Text in base64-Audio umwandeln (Gemini-TTS) -> { ok, data, mime, error }. */
   speakText?(text: string): Promise<{ ok: boolean; data: string; mime?: string; error?: string }>
   startSpeechStream?(text: string): Promise<{ ok: boolean; requestId?: string; error?: string }>
   cancelSpeechStream?(requestId: string): Promise<boolean>
   previewAudioVoice?(voice: string): Promise<{ ok: boolean; data: string; mime?: string; error?: string }>
   onSpeechStreamEvent?(cb: (event: SpeechStreamEvent) => void): void
+  /* live voice (bidirectional speech session) */
+  startLiveVoice?(id: string): Promise<{ ok: boolean; error?: string }>
+  sendLiveAudio?(id: string, data: string): void
+  stopLiveVoice?(id: string): void
+  /** Live-Sprach-Events; Rueckgabe ist eine Unsubscribe-Funktion. */
+  onLiveVoice?(cb: (event: { requestId: string; type: 'ready' | 'audio' | 'error' | 'closed' | 'interrupted'; data?: string; sampleRate?: number; error?: string }) => void): () => void
+  listChatModels?(): Promise<Array<{ id: string; name: string; levels: string[] }>>
   /** Push-to-Talk: Start der Aufnahme (Alt+C gedrueckt). */
   onPttStart?(cb: () => void): void
   /** Push-to-Talk: Ende der Aufnahme (Alt+C losgelassen). */

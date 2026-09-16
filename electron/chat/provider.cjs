@@ -96,6 +96,9 @@ const MAX_RETRIES = 5
  * Wiederholt bei Fehlern bis zu 5 Mal mit exponentiellem Backoff (1s, 2s, 4s, 8s, 16s).
  */
 async function streamChat(cfg, normalizedRequest, signal, onEvent) {
+  try {
+    if (await require('./model-catalog.cjs').stream(cfg, normalizedRequest, signal, onEvent)) return
+  } catch (error) { onEvent({ type: 'error', message: error.message }); return }
   const adapter = getAdapter(cfg.protocol)
   if (!adapter) {
     onEvent({ type: 'error', message: `unknown protocol: ${cfg.protocol}` })
@@ -201,6 +204,12 @@ async function streamChat(cfg, normalizedRequest, signal, onEvent) {
 
 /** 1-Token-Ping für den Settings-Test-Button; liefert ok:true oder den Fehler wörtlich. */
 async function pingProvider(cfg) {
+  if (!cfg?.baseUrl || !cfg.baseUrl.trim()) {
+    return { ok: false, error: 'Base URL is required' }
+  }
+  if (!cfg?.model || !cfg.model.trim()) {
+    return { ok: false, error: 'Model name is required' }
+  }
   const adapter = getAdapter(cfg.protocol)
   if (!adapter) return { ok: false, error: `unknown protocol: ${cfg.protocol}` }
   const req = adapter.pingRequest(cfg)
@@ -214,6 +223,69 @@ async function pingProvider(cfg) {
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err?.message || String(err) }
+  }
+}
+
+/** Bereinigt Titel: maximal fünf Wörter, keine Anführungszeichen oder Satzzeichen am Ende. */
+function cleanTitle(raw) {
+  if (!raw || typeof raw !== 'string') return null
+  let t = raw.trim()
+  t = t.replace(/^(Title|Titel)\s*:\s*/i, '')
+  t = t.replace(/^["'`“«\s]+|["'`”»\s]+$/g, '')
+  t = t.replace(/[#*_`]/g, '')
+  const words = t.split(/\s+/).filter(Boolean)
+  if (words.length === 0) return null
+  const capped = words.slice(0, 5).join(' ')
+  return capped.replace(/[.,:;!?]+$/, '').trim()
+}
+
+/** Lokaler Fallback-Titel aus der ersten User-Nachricht (maximal fünf Wörter). */
+function localFallbackTitle(text) {
+  if (!text || typeof text !== 'string') return 'New Chat'
+  let cleaned = text.replace(/^[#*_`>\-\s"']+|[#*_`>\-\s"'.]+$/g, '').trim()
+  cleaned = cleaned.replace(/[#*_`\r\n]/g, ' ')
+  const words = cleaned.split(/\s+/).filter(Boolean).slice(0, 5)
+  if (words.length === 0) return 'New Chat'
+  const title = words.join(' ')
+  return title.length > 40 ? title.slice(0, 37) + '…' : title
+}
+
+/**
+ * Erzeugt einen kurzen Konversationstitel (maximal 5 Wörter) über den konfigurierten Provider.
+ * Nutzt ein knappes Token-Budget (16) und fällt bei Fehlern auf null zurück.
+ */
+async function requestTitle(cfg, userText) {
+  if (!cfg?.baseUrl || !userText || typeof userText !== 'string') return null
+  const adapter = getAdapter(cfg.protocol)
+  if (!adapter) return null
+
+  const sample = userText.trim().slice(0, 400)
+  const normalizedReq = {
+    system: 'You generate a short conversation title of at most 5 words. Output ONLY the title words, no quotes, no explanation, no period at the end.',
+    messages: [
+      {
+        role: 'user',
+        content: `Generate a brief title (at most 5 words) for this request: "${sample}"`
+      }
+    ],
+    tools: [],
+    maxTokens: 16
+  }
+
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), 7000)
+  try {
+    let accumulated = ''
+    await streamChat(cfg, normalizedReq, ac.signal, (ev) => {
+      if (ev.type === 'token' && typeof ev.text === 'string') {
+        accumulated += ev.text
+      }
+    })
+    clearTimeout(timer)
+    return cleanTitle(accumulated)
+  } catch {
+    clearTimeout(timer)
+    return null
   }
 }
 
@@ -232,4 +304,13 @@ function guessProtocol(baseUrl) {
   return null
 }
 
-module.exports = { getAdapter, streamChat, pingProvider, guessProtocol, protocolsPath: path.join(__dirname, 'protocols') }
+module.exports = {
+  getAdapter,
+  streamChat,
+  pingProvider,
+  guessProtocol,
+  requestTitle,
+  cleanTitle,
+  localFallbackTitle,
+  protocolsPath: path.join(__dirname, 'protocols')
+}

@@ -12,7 +12,8 @@ import {
   type UpdateCheckResult
 } from './shared'
 
-import { createSegmented, createSelect, createSwitch, confirmDialog, type SelectHandle } from './ui/kit'
+import { createSelect, createSwitch, confirmDialog, type SelectHandle } from './ui/kit'
+import { setupSettingsSidebar } from './settings-sidebar'
 
 const bridge = getBridge()
 
@@ -59,7 +60,7 @@ const autostartSwitch = createSwitch({
 document.getElementById('autostart-toggle-slot')!.replaceChildren(autostartSwitch.el)
 
 // Globale Dateizugriffs-Stufe: none / read / readwrite
-const fileAccessSeg = createSegmented({
+const fileAccessSeg = createSelect({
   options: [
     { value: 'none', label: 'No access' },
     { value: 'read', label: 'Read files' },
@@ -201,7 +202,7 @@ maxDrawCallsInput.addEventListener('change', () => {
 /* ------------------------------------------------------- autopilot (Pad) */
 
 // Modus: aus / unsichtbar (nur Aktionen, nie Text) / sichtbar (Antwort im Chat)
-const autoPilotModeSeg = createSegmented({
+const autoPilotModeSeg = createSelect({
   options: [
     { value: 'off', label: 'Off' },
     { value: 'silent', label: 'Silent' },
@@ -216,7 +217,7 @@ const autoPilotModeSeg = createSegmented({
 document.getElementById('autopilot-mode-slot')!.replaceChildren(autoPilotModeSeg.el)
 
 // Intervall zwischen den Selbst-Check-ins
-const autoPilotIntervalSeg = createSegmented({
+const autoPilotIntervalSeg = createSelect({
   options: [
     { value: '30', label: '30 s' },
     { value: '60', label: '1 min' },
@@ -232,7 +233,7 @@ const autoPilotIntervalSeg = createSegmented({
 document.getElementById('autopilot-interval-slot')!.replaceChildren(autoPilotIntervalSeg.el)
 
 // "Wurf" pro Tick: wie oft die AI ueberhaupt gefragt wird
-const autoPilotChanceSeg = createSegmented({
+const autoPilotChanceSeg = createSelect({
   options: [
     { value: '100', label: 'Always' },
     { value: '50', label: '50 %' },
@@ -443,7 +444,7 @@ function grantsInto(obj: Record<string, unknown>) {
 }
 
 // Custom-Select statt nativem <select> (UI-Kit-Regel)
-const protocolSelect: SelectHandle = createSegmented({
+const protocolSelect: SelectHandle = createSelect({
   options: [
     { value: 'openai-completions', label: 'Compatible' },
     { value: 'openai-responses', label: 'Responses' },
@@ -476,7 +477,7 @@ const voiceSwitch = createSwitch({
 })
 document.getElementById('chat-voice-toggle-slot')!.replaceChildren(voiceSwitch.el)
 
-const verbositySeg = createSegmented({
+const verbositySeg = createSelect({
   options: [
     { value: 'concise', label: 'Concise' },
     { value: 'balanced', label: 'Balanced' },
@@ -940,7 +941,7 @@ const recallClipboardSwitch = createSwitch({
 })
 document.getElementById('recall-clipboard-slot')!.replaceChildren(recallClipboardSwitch.el)
 
-const recallBrowserSeg = createSegmented({
+const recallBrowserSeg = createSelect({
   options: [
     { value: 'off', label: 'Off' },
     { value: 'extension', label: 'Guided extension' },
@@ -1131,7 +1132,7 @@ function syncRecallFields() {
 
 // Separater Gemini-Sprachbereich: STT + TTS, unabhaengig vom Chat-Provider.
 
-const audioModelSeg = createSegmented({
+const audioModelSeg = createSelect({
   options: [
     { value: 'gemini-2.5-flash-native-audio-preview-12-2025', label: '2.5 Flash Audio' },
     { value: 'gemini-3.1-flash-live-preview', label: '3.1 Flash Live' }
@@ -1494,7 +1495,7 @@ function wellSearchText(well: HTMLElement): string {
   const head = well.querySelector('.well-head')
   if (head) parts.push(head.textContent ?? '')
   // Labels (fld-Label-Text) und Hints einsammeln - ohne Kontrollwerte
-  for (const el of well.querySelectorAll<HTMLElement>('.fld, .hint, .toggle-slot, .pills, #color-row, .about-desc')) {
+  for (const el of well.querySelectorAll<HTMLElement>('.fld, .hint, .setting-copy, .workspace-heading, .toggle-slot, .pills, #color-row, .about-desc')) {
     parts.push(el.textContent ?? '')
   }
   return parts.join(' ').toLowerCase()
@@ -1505,16 +1506,19 @@ function setupSearch(): void {
 
   const toggleSearch = (open: boolean) => {
     searchOpen = open
-    searchBar.classList.toggle('hidden', !open)
     if (open) {
+      sidebar.expand()
       searchInput?.focus()
     } else if (searchInput) {
       searchInput.value = ''
+      searchInput.blur()
       clearSearch()
     }
   }
 
-  searchToggleBtn.addEventListener('click', () => toggleSearch(!searchOpen))
+  const sidebar = setupSettingsSidebar(() => toggleSearch(false))
+  searchToggleBtn.addEventListener('click', () => toggleSearch(true))
+  searchInput?.addEventListener('focus', () => { searchOpen = true })
 
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
