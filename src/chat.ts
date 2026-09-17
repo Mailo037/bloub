@@ -1300,6 +1300,9 @@ function initStandaloneChat(): void {
     }
   }
   const streamingTextByChat = new Map<string, string>()
+  // Chats whose current turn was sent from THIS window — their accepted echo
+  // must not render a duplicate bubble (triggerSend already rendered it).
+  const selfSentByChat = new Set<string>()
   let activeAssistantBubble: HTMLElement | null = null
   let activeAttachments: AttachChip[] = []
 
@@ -1607,6 +1610,7 @@ function initStandaloneChat(): void {
           content.className = 'assistant-content'
           content.replaceChildren(renderMarkdownLite(currentStreaming))
           row.appendChild(content)
+          appendCopyButton(row, content)
           messagesContainer.appendChild(row)
           activeAssistantBubble = content
         } else {
@@ -1619,6 +1623,48 @@ function initStandaloneChat(): void {
     refreshHistory()
   }
 
+  /** Assistant placeholder for turns that started outside this window. */
+  function ensureAssistantBubble(): HTMLElement | null {
+    if (!messagesContainer) return null
+    const existing = messagesContainer.querySelector<HTMLElement>('.message-row.assistant:last-of-type .assistant-content')
+    if (existing && !existing.textContent?.trim()) return existing
+    const row = document.createElement('div')
+    row.className = 'message-row assistant'
+    const content = document.createElement('div')
+    content.className = 'assistant-content'
+    row.appendChild(content)
+    appendCopyButton(row, content)
+    messagesContainer.appendChild(row)
+    activeAssistantBubble = content
+    scrollToBottom()
+    return content
+  }
+
+  function appendCopyButton(row: HTMLElement, content: HTMLElement) {    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'message-copy'
+    button.title = 'Copy message'
+    button.setAttribute('aria-label', 'Copy message')
+    button.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><span>Copy</span>'
+    const label = button.querySelector('span')!
+    label.setAttribute('aria-live', 'polite')
+    let reset: ReturnType<typeof setTimeout> | undefined
+    button.addEventListener('click', async () => {
+      // Read at click time so streaming messages copy their latest text.
+      const text = content.innerText
+      if (!text.trim()) return
+      clearTimeout(reset)
+      try {
+        await navigator.clipboard.writeText(text)
+        label.textContent = 'Copied'
+      } catch {
+        label.textContent = 'Copy failed'
+      }
+      reset = setTimeout(() => { label.textContent = 'Copy' }, 1800)
+    })
+    row.append(button)
+  }
+
   function appendMessageBubble(role: 'user' | 'assistant', text: string): HTMLElement {
     emptyState?.classList.add('hidden')
     messagesContainer?.classList.remove('hidden')
@@ -1629,11 +1675,13 @@ function initStandaloneChat(): void {
       bubble.className = 'user-bubble'
       bubble.textContent = text
       row.appendChild(bubble)
+      appendCopyButton(row, bubble)
     } else {
       const content = document.createElement('div')
       content.className = 'assistant-content'
       content.replaceChildren(renderMarkdownLite(text))
       row.appendChild(content)
+      appendCopyButton(row, content)
     }
     messagesContainer?.appendChild(row)
     scrollToBottom()
@@ -1694,12 +1742,14 @@ function initStandaloneChat(): void {
     const content = document.createElement('div')
     content.className = 'assistant-content'
     row.appendChild(content)
+    appendCopyButton(row, content)
     messagesContainer?.appendChild(row)
     activeAssistantBubble = content
     renderWorkingIndicator()
     scrollToBottom()
 
     const sentChatId = activeChatId
+    selfSentByChat.add(sentChatId)
     try {
       await bridge.sendChat?.({
         text,
@@ -1742,12 +1792,30 @@ function initStandaloneChat(): void {
     const targetChat = ev.chatId || activeChatId
 
     if (ev.type === 'accepted' || ev.type === 'tools' || ev.type === 'status') {
+      const wasGenerating = !!generatingByChat.get(targetChat)
       generatingByChat.set(targetChat, true)
       workingByChat.set(targetChat, true)
+      if (ev.type === 'accepted') {
+        // A turn started outside this window (pet dock, autopilot): render its
+        // user text and an assistant placeholder so tokens have a target.
+        if (!selfSentByChat.has(targetChat) && !wasGenerating) {
+          if (targetChat === activeChatId) {
+            if (ev.chipText) appendMessageBubble('user', ev.chipText)
+            ensureAssistantBubble()
+          }
+          streamingTextByChat.set(targetChat, '')
+        }
+      }
       if (targetChat === activeChatId) setGenerating(true)
     } else if (ev.type === 'token') {
       workingByChat.set(targetChat, false)
-      if (targetChat === activeChatId) renderWorkingIndicator()
+      if (targetChat === activeChatId) {
+        // Tokens can arrive before this window saw the accepted echo (dock
+        // turn started while the window was opening): create the placeholder
+        // on demand so the reply is never lost.
+        if (!activeAssistantBubble) ensureAssistantBubble()
+        renderWorkingIndicator()
+      }
       const current = (streamingTextByChat.get(targetChat) || '') + ev.text
       streamingTextByChat.set(targetChat, current)
       if (targetChat === activeChatId && activeAssistantBubble) {
@@ -1789,6 +1857,7 @@ function initStandaloneChat(): void {
     } else if (ev.type === 'done') {
       generatingByChat.set(targetChat, false)
       streamingTextByChat.delete(targetChat)
+      selfSentByChat.delete(targetChat)
       if (targetChat === activeChatId) {
         setGenerating(false)
         activeAssistantBubble = null
@@ -1796,6 +1865,7 @@ function initStandaloneChat(): void {
       }
     } else if (ev.type === 'error') {
       generatingByChat.set(targetChat, false)
+      selfSentByChat.delete(targetChat)
       if (targetChat === activeChatId) {
         setGenerating(false)
         if (activeAssistantBubble) {

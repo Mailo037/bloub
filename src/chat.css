@@ -809,6 +809,12 @@ pre code {
 .dictation-panel[data-state=error] .dictation-status { text-align: left; padding: 0 6px; }
 .dictation-wave[hidden] { display: none; }
 
+/* Message actions stay outside the text, including during streaming updates. */
+.message-copy { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 5px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 12px; cursor: pointer; }
+.message-copy:hover { background: #ffffff0d; color: var(--text-primary); }
+.message-copy:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.assistant-content:empty + .message-copy { display: none; }
+
 /* In-conversation activity: quiet text and three pulsing dots. */
 .chat-working { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 13px; min-height: 24px; }
 .chat-working-dots { display: flex; gap: 4px; }

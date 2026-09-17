@@ -101,6 +101,7 @@ export interface ChatConfig {
   autoPilotChance: number
   /** Denkaufwand-Stufe des Modells: off | minimal | low | medium | high | xhigh. */
   reasoningLevel?: string
+  modelProfiles?: Array<{ baseUrl: string; protocol: string; model: string; models: string[] }>
 }
 
 export type PetConfigShape = {
@@ -139,6 +140,8 @@ export interface AudioConfig {
   pttHotkey: string
   /** Live-Sprach-Engine: 'gemini' | 'openai'. */
   liveProvider?: string
+  transcriptionProvider?: 'openai' | 'gemini' | 'local'
+  whisperUrl?: string
 }
 
 export type SpeechStreamEvent =
@@ -308,6 +311,8 @@ export interface UpdateProgressPayload {
 }
 
 export interface PetBridge {
+  setProviderApiKey?(provider: 'openai' | 'gemini', key: string): Promise<{ ok: boolean; error?: string }>
+  getProviderKeyStatus?(provider: 'openai' | 'gemini'): Promise<{ hasKey: boolean }>
   moveBy(dx: number, dy: number): void
   dragEnd?(): void
   setIgnore(ignore: boolean): void
@@ -402,7 +407,9 @@ export interface PetBridge {
   stopLiveVoice?(id: string): void
   /** Live-Sprach-Events; Rueckgabe ist eine Unsubscribe-Funktion. */
   onLiveVoice?(cb: (event: { requestId: string; type: 'ready' | 'audio' | 'error' | 'closed' | 'interrupted'; data?: string; sampleRate?: number; error?: string }) => void): () => void
-  listChatModels?(): Promise<Array<{ id: string; name: string; levels: string[] }>>
+  listChatModels?(): Promise<Array<{ key: string; id: string; name: string; providerName: string; baseUrl: string; protocol: string; levels: string[] }>>
+  editChatModels?(action: 'add' | 'remove', id: string): Promise<{ ok: boolean; error?: string }>
+  selectChatModel?(key: string, level: string): Promise<{ ok: boolean; error?: string }>
   /** Push-to-Talk: Start der Aufnahme (Alt+C gedrueckt). */
   onPttStart?(cb: () => void): void
   /** Push-to-Talk: Ende der Aufnahme (Alt+C losgelassen). */

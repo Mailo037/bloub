@@ -11,19 +11,20 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
   const popup = document.createElement('div')
   popup.className = 'model-popover hidden'
   root.append(trigger, popup)
-  let models: Array<{ id: string; name: string; levels: string[] }> = []
+  let models: Awaited<ReturnType<NonNullable<typeof bridge.listChatModels>>> = []
+  let loadVersion = 0
   let selected = ''
   let effort = ''
   const labels: Record<string, string> = { off: 'Instant', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Very high' }
   const close = () => { popup.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false') }
   async function save(model: string, level: string) {
-    const cfg = await bridge.getConfig()
-    await bridge.updateConfig({ chat: { ...cfg.chat, model, reasoningLevel: level } })
+    const result = await bridge.selectChatModel?.(model, level)
+    if (!result?.ok) throw new Error(result?.error || 'Could not save selection')
     selected = model; effort = level
-    render()
+    await load()
   }
   function render(list = false) {
-    const model = models.find(m => m.id === selected)
+    const model = models.find(m => m.key === selected)
     const label = document.createElement('span')
     label.className = 'effort-trigger-label'
     label.textContent = model?.levels.length ? labels[effort] || 'Reasoning effort' : model?.name || selected || 'Model'
@@ -37,11 +38,20 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
     if (list || !model?.levels.length) {
       heading.textContent = 'Choose model'
       popup.append(heading)
-      for (const m of models) {
+      if (!models.length) {
+        const empty = document.createElement('p'); empty.textContent = 'Configure a provider and add models in Connections.'; popup.append(empty)
+      }
+      let group = ''
+      for (const m of [...models].sort((a, b) => a.providerName.localeCompare(b.providerName))) {
+        if (group !== m.providerName) {
+          group = m.providerName
+          const title = document.createElement('div'); title.className = 'model-popover-heading'; title.textContent = group; popup.append(title)
+        }
         const option = document.createElement('button')
         option.className = 'model-option'
-        option.textContent = m.name + (m.id === selected ? ' ✓' : '')
-        option.onclick = () => void save(m.id, m.levels.includes(effort) ? effort : m.levels.includes('medium') ? 'medium' : m.levels[0] || '').catch(showError)
+        option.textContent = m.name + (m.key === selected ? ' ✓' : '')
+        option.title = `${m.providerName} · ${m.id}`
+        option.onclick = () => void save(m.key, m.levels.includes(effort) ? effort : m.levels.includes('medium') ? 'medium' : m.levels[0] || '').catch(showError)
         popup.append(option)
       }
     } else {
@@ -86,9 +96,13 @@ export function initModelSelector(bridge: ReturnType<typeof getBridge>) {
     if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); trigger.click(); popup.querySelector<HTMLInputElement>('input')?.focus() }
   })
   async function load() {
+    const version = ++loadVersion
     const cfg = await bridge.getConfig()
-    selected = cfg.chat?.model || ''; effort = cfg.chat?.reasoningLevel || ''
-    models = await bridge.listChatModels?.() || []
+    const rows = await bridge.listChatModels?.() || []
+    if (version !== loadVersion) return
+    models = rows
+    const current = models.find(m => m.id === cfg.chat?.model && m.protocol === cfg.chat?.protocol && m.baseUrl.replace(/\/$/, '') === (cfg.chat?.baseUrl || '').replace(/\/$/, ''))
+    selected = current?.key || ''; effort = cfg.chat?.reasoningLevel || ''
     render()
   }
   bridge.onConfigChanged(() => { void load().catch(showError) })

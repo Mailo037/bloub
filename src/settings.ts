@@ -14,6 +14,8 @@ import {
 } from './shared'
 
 import { createSelect, createSwitch, confirmDialog, type SelectHandle } from './ui/kit'
+import { setupProviderSettings } from './provider-settings'
+let providerSettings: ReturnType<typeof setupProviderSettings> | undefined
 import { setupSettingsSidebar } from './settings-sidebar'
 
 const bridge = getBridge()
@@ -343,6 +345,7 @@ bridge.onConfigChanged((fresh) => {
   syncChatFields()
   syncRecallFields()
   syncAudioFields()
+  providerSettings?.sync()
   renderGrants(config.chat?.grants ?? [])
   updateAboutAvatar()
 })
@@ -660,14 +663,6 @@ testBtn.addEventListener('click', () => {
   })
 })
 
-apiKeyInput.addEventListener('change', () => {
-  const key = apiKeyInput.value.trim()
-  if (!key) return
-  void bridge.setApiKey?.(key)?.then(({ ok }) => {
-    apiKeyInput.value = ''
-    apiKeyInput.placeholder = ok ? '(saved)' : '(storage unavailable)'
-  })
-})
 
 // In-Fenster-Dialog statt window.confirm() — nicht-fokussierbare Fenster
 // koennen gar keine nativen Dialoge zeigen, und die UI-Regel verbietet sie eh.
@@ -1132,16 +1127,7 @@ function syncRecallFields() {
 
 /* -------------------------------------------------------- audio / sprache */
 
-// Separater Gemini-Sprachbereich: STT + TTS, unabhaengig vom Chat-Provider.
-
-const audioModelSeg = createSelect({
-  options: [
-    { value: 'gemini-2.5-flash-native-audio-preview-12-2025', label: '2.5 Flash Audio' },
-    { value: 'gemini-3.1-flash-live-preview', label: '3.1 Flash Live' }
-  ],
-  onChange: (value) => pushAudioConfig({ model: value })
-})
-document.getElementById('audio-model-slot')!.replaceChildren(audioModelSeg.el)
+// Gemini text-to-speech; provider selection and shared keys live in provider-settings.
 
 const audioApiKeyInput = document.getElementById('audio-apikey') as HTMLInputElement
 const audioTestResult = document.getElementById('audio-test-result')!
@@ -1177,14 +1163,6 @@ function pushAudioConfig(partial: Record<string, unknown>) {
   void bridge.updateConfig({ audio: { ...(config.audio ?? {}), ...partial } })
 }
 
-audioApiKeyInput?.addEventListener('change', () => {
-  void bridge.setAudioApiKey?.(audioApiKeyInput.value.trim()).then(({ ok }) => {
-    if (ok) {
-      audioApiKeyInput.value = ''
-      audioApiKeyInput.placeholder = '(saved)'
-    }
-  })
-})
 
 audioPttInput?.addEventListener('change', () => {
   const combo = audioPttInput.value.trim()
@@ -1261,7 +1239,6 @@ document.getElementById('audio-guide-pricing')?.addEventListener('click', () => 
 function syncAudioFields() {
   const a = config.audio
   if (!a) return
-  audioModelSeg.setValue(a.model ?? '')
   audioVoiceSwitch.setValue(!!a.voiceEnabled)
   audioVoiceSelect.setValue(a.voice ?? 'Achird')
   if (document.activeElement !== audioApiKeyInput) {
@@ -1341,6 +1318,8 @@ async function init() {
   syncChatFields()
   syncRecallFields()
   syncAudioFields()
+  providerSettings = setupProviderSettings(bridge, () => config, switchTab)
+  providerSettings.sync()
   renderGrants(config.chat?.grants ?? [])
   updateAboutAvatar()
   void loadSpecs()

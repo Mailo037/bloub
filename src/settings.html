@@ -102,28 +102,44 @@
           <section class="well collapsible open">
             <h2 class="well-head"><span class="well-title">Chat Provider</span></h2>
             <div class="well-body">
-              <label class="fld">Wire protocol
-                <div id="chat-protocol"></div>
-              </label>
-              <label class="fld">Base URL
-                <input type="text" id="chat-baseurl" spellcheck="false" placeholder="https://api.openai.com/v1" />
-              </label>
-              <label class="fld">Model
+              <div class="preference-row"><div class="setting-copy"><span>Chat provider</span><p>Choose which service answers your text chats.</p></div><div id="chat-provider-slot"></div></div>
+              <div id="custom-chat-fields" class="setting-group hidden">
+                <label class="fld">Wire protocol<div id="chat-protocol"></div></label>
+                <label class="fld">Base URL<input type="text" id="chat-baseurl" spellcheck="false" placeholder="https://api.openai.com/v1" /></label>
+              </div>
+              <label class="fld">Active model
                 <input type="text" id="chat-model" spellcheck="false" placeholder="gpt-4o-mini" />
               </label>
+              <div class="setting-group">
+                <div class="preference-row"><div class="setting-copy"><label for="chat-model-add">Saved models</label><p>Add model IDs available at this provider. They appear together in the chat model menu.</p></div><div class="preference-controls"><input id="chat-model-add" type="text" spellcheck="false" placeholder="Model ID" /><button id="chat-model-add-btn" type="button" class="k-action-btn">Add model</button></div></div>
+                <div id="chat-saved-models"></div>
+                <p id="chat-models-status" class="hint" role="status"></p>
+              </div>
+              <div id="custom-chat-key-row" class="preference-row hidden">
+                <div class="setting-copy"><label for="chat-apikey">Custom provider key</label><p id="custom-key-status" role="status">Only used with your custom endpoint.</p></div>
+                <div class="preference-controls"><input type="password" id="chat-apikey" autocomplete="off" placeholder="Not set" /><button type="button" id="custom-key-save" class="k-action-btn">Save key</button></div>
+              </div>
               <div class="preference-row">
-                <div class="setting-copy"><label for="chat-apikey">API key</label><span id="chat-test-result" class="test-feedback"></span></div>
-                <div class="preference-controls"><input type="password" id="chat-apikey" placeholder="(not set)" /><button type="button" id="chat-test-btn" class="k-action-btn">Test connection</button></div>
+                <div class="setting-copy"><p id="chat-credential-hint" class="hint">Uses the saved provider key below.</p><span id="chat-test-result" class="test-feedback" role="status"></span></div>
+                <button type="button" id="chat-test-btn" class="k-action-btn">Test connection</button>
               </div>
             </div>
           </section>
 
-          <section class="well collapsible open">
-            <h2 class="well-head"><span class="well-title">Voice connection</span></h2>
+          <section class="well collapsible open" id="provider-credentials">
+            <h2 class="well-head"><span class="well-title">Provider keys</span></h2>
             <div class="well-body">
-              <div class="preference-row">
-                <div class="setting-copy"><label for="audio-apikey">Gemini API key</label><p>Connect dictation and voice replies.</p><span id="audio-test-result" class="test-feedback"></span></div>
-                <div class="preference-controls"><input type="password" id="audio-apikey" placeholder="(not set)" /><button type="button" id="audio-test-btn" class="k-action-btn">Test connection</button></div>
+              <div class="preference-row"><div class="setting-copy"><span>Manage key</span><p>Save once. Chat, dictation and live voice share the same provider key.</p></div><div id="credential-provider-slot"></div></div>
+              <div id="openai-credential-row" class="preference-row">
+                <div class="setting-copy"><label for="openai-apikey">OpenAI API key</label><p id="openai-key-status" role="status">Not set</p></div>
+                <div class="preference-controls"><input type="password" id="openai-apikey" autocomplete="off" placeholder="Not set" /><button type="button" id="openai-key-save" class="k-action-btn">Save key</button></div>
+              </div>
+              <div id="gemini-credential-row" class="setting-group hidden">
+                <div class="preference-row">
+                  <div class="setting-copy"><label for="audio-apikey">Gemini API key</label><p id="gemini-key-status" role="status">Not set</p></div>
+                  <div class="preference-controls"><input type="password" id="audio-apikey" autocomplete="off" placeholder="Not set" /><button type="button" id="gemini-key-save" class="k-action-btn">Save key</button></div>
+                </div>
+                <div class="row-between"><span id="audio-test-result" class="test-feedback" role="status"></span><button type="button" id="audio-test-btn" class="k-action-btn">Test Gemini voice</button></div>
               </div>
             </div>
           </section>
@@ -212,14 +228,18 @@
         <!-- VOICE PANE -->
         <div id="pane-audio" class="pane hidden" role="tabpanel">
           <section class="well open">
+            <h2 class="well-head"><span class="well-title">Voice provider</span></h2>
+            <div class="well-body">
+              <div class="preference-row"><div class="setting-copy"><span>Provider</span><p>Use OpenAI or Gemini for live conversations and cloud dictation.</p></div><div id="voice-provider-slot"></div></div>
+              <div class="preference-row"><div class="setting-copy"><p id="voice-key-status" class="hint" role="status"></p></div><button type="button" id="voice-manage-key" class="k-action-btn">Manage key in Connections</button></div>
+              <div class="setting-group"><div class="setting-copy"><span>Live voice chat</span><p id="live-model-description" class="hint"></p></div><p class="hint">Live voice chat does not run local tools.</p></div>
+            </div>
+          </section>
+          <section class="well open">
             <h2 class="well-head"><span class="well-title">Transcription</span></h2>
             <div class="well-body">
               <div class="preference-row"><div class="setting-copy"><span>Speech to text</span><p>For dictation and push-to-talk.</p></div><div id="transcription-provider-slot"></div></div>
-              <div id="transcription-openai-fields" class="setting-group">
-                <label class="fld">OpenAI API key<input id="transcription-key" type="password" autocomplete="off" placeholder="Not set" /></label>
-                <p class="hint">gpt-4o-mini-transcribe · A dedicated speech-to-text model. Audio is sent to OpenAI for transcription.</p>
-                <p id="transcription-key-result" class="hint" role="status"></p>
-              </div>
+              <p id="transcription-cloud-description" class="hint"></p>
               <div id="transcription-local-fields" class="setting-group hidden">
                 <label class="fld">Local server URL<input id="transcription-local-url" type="url" spellcheck="false" placeholder="http://127.0.0.1:8080/inference" /></label>
                 <p class="hint">Requires a running whisper.cpp server with a multilingual Whisper model loaded. Audio stays on this device. For WebM recordings, start the server with --convert; this requires FFmpeg.</p>
@@ -227,15 +247,14 @@
               </div>
             </div>
           </section>
-          <section class="well collapsible open"><h2 class="well-head"><span class="well-title">Voice replies &amp; dictation</span></h2><div class="well-body">              <div id="audio-voice-slot" class="toggle-slot"></div>
+          <section id="gemini-voice-settings" class="well collapsible open"><h2 class="well-head"><span class="well-title">Read replies aloud · Gemini</span></h2><div class="well-body">              <div id="audio-voice-slot" class="toggle-slot"></div>
               <div class="preference-row">
                 <div class="setting-copy"><span>Voice</span><p>Choose how Bloub sounds.</p><span id="audio-preview-result" class="hint"></span></div>
                 <div class="preference-controls"><div id="audio-voice-picker-slot"></div><button type="button" id="audio-preview-btn" class="k-action-btn">Preview</button></div>
               </div>
-              <label class="fld">Push-to-talk hotkey
-                <input type="text" id="audio-ptt" spellcheck="false" placeholder="Alt+X" />
-              </label>
 </div></section>
+          <section id="openai-voice-note" class="well open hidden"><h2 class="well-head"><span class="well-title">Voice replies</span></h2><div class="well-body"><p class="hint">OpenAI speaks during live voice chat. Reading ordinary text replies aloud is currently available only with Gemini.</p></div></section>
+          <section class="well open"><h2 class="well-head"><span class="well-title">Dictation shortcut</span></h2><div class="well-body"><label class="fld">Push-to-talk hotkey<input type="text" id="audio-ptt" spellcheck="false" placeholder="Alt+X" /></label></div></section>
           <section class="well open">
             <h2 class="well-head"><span class="well-title">Recent recordings</span></h2>
             <div class="well-body">
@@ -243,20 +262,7 @@
               <div id="dictation-history" aria-live="polite"></div>
             </div>
           </section>
-          <section class="well collapsible open">
-            <h2 class="well-head"><span class="well-title">Live voice chat</span></h2>
-            <div class="well-body">
-              <label class="fld">Provider and voice model
-                <div id="audio-model-slot"></div>
-              </label>
-              <div class="setting-group">
-                <label class="fld" id="live-openai-key-row">OpenAI API key<input type="password" id="live-openai-key" autocomplete="off" placeholder="Not set" /></label>
-                <p id="live-key-status" class="hint" role="status"></p>
-                <p class="hint">Gemini uses the key from Connections. The OpenAI key is also used for OpenAI transcription. GPT-Live 1 uses GPT-5.6 Luna for in-depth answers. Live voice chat does not run local tools.</p>
-              </div>
-            </div>
-          </section>
-          <section class="well collapsible open">
+          <section id="gemini-key-guide" class="well collapsible open">
             <h2 class="well-head"><span class="well-title">Get a Gemini API key</span></h2>
             <div class="well-body">
               <p class="hint"><b>Free tier:</b> Gemini TTS and Live currently have a rate-limited free tier. Submit your key in the Connections tab.</p>

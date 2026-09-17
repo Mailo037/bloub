@@ -34,4 +34,14 @@ async function stream(cfg, req, signal, emit) {
   }
   return true
 }
-module.exports = { catalog, resolve, stream }
+async function describeChoices(rows) {
+  try {
+    const lib = await pi()
+    return rows.map(row => {
+      const provider = row.provider === 'gemini' ? 'google' : row.provider === 'openai' ? 'openai' : null
+      const model = provider ? lib.getModels(provider).find(m => m.id === row.id) : null
+      return { ...row, name: model?.name || row.id, levels: model?.reasoning ? lib.getSupportedThinkingLevels(model) : [] }
+    })
+  } catch { return rows }
+}
+module.exports = { catalog, resolve, stream, describeChoices }

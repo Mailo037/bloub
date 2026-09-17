@@ -79,7 +79,9 @@ contextBridge.exposeInMainWorld('bloubPet', {
   recallPurge: () => ipcRenderer.invoke('recall:purge'),
   recallTogglePause: () => ipcRenderer.invoke('recall:toggle-pause'),
   recallExtensionFolder: () => ipcRenderer.invoke('recall:extension-folder'),
-  // audio / voice (Gemini-powered, separate engine)
+  setProviderApiKey: (provider, key) => ipcRenderer.invoke('provider:set-api-key', provider, key),
+  getProviderKeyStatus: (provider) => ipcRenderer.invoke('provider:key-status', provider),
+  // audio / voice
   setAudioApiKey: (key) => ipcRenderer.invoke('audio:set-api-key', key),
   startLiveVoice: (id) => ipcRenderer.invoke('voice:start', id),
   sendLiveAudio: (id, data) => ipcRenderer.send('voice:audio', id, data),
@@ -95,6 +97,8 @@ contextBridge.exposeInMainWorld('bloubPet', {
   retryDictation: (id) => ipcRenderer.invoke('audio:retry-dictation', id),
   copyDictation: (id) => ipcRenderer.invoke('audio:copy-dictation', id),
   listChatModels: () => ipcRenderer.invoke('chat:models'),
+  editChatModels: (action, id) => ipcRenderer.invoke('chat:edit-models', action, id),
+  selectChatModel: (key, level) => ipcRenderer.invoke('chat:select-model', key, level),
   listDictations: () => ipcRenderer.invoke('audio:dictations'),
   transcribeAudio: (payload) => ipcRenderer.invoke('audio:transcribe', payload),
   // TTS: Text in base64-Audio umwandeln

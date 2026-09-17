@@ -224,6 +224,21 @@ function getActiveChat(userData) {
   return createChat(userData)
 }
 
+/** Resolve a visible conversation without changing appendRecord's draft fallback.
+ * Pass preferVisible:false to retain an explicitly selected empty draft.
+ */
+function getOrCreateActiveChat(userData, { preferVisible = true } = {}) {
+  const active = getChat(userData, getActiveChatId(userData))
+  if (active && !active.archived && (!preferVisible || (Array.isArray(active.records) && active.records.length > 0))) {
+    return active
+  }
+  const newest = listChats(userData)[0]
+  if (newest) return setActiveChat(userData, newest.id)
+  // Reuse the startup draft when there is no visible history to resume.
+  if (active && !active.archived) return active
+  return createChat(userData)
+}
+
 /** Initialisiert das Chat-System: Setzt Store zurück, migriert Altlasten und startet IMMER einen frischen Chat beim Start. */
 function init(userData) {
   const store = getStore(userData)
@@ -578,6 +593,7 @@ module.exports = {
   createChat,
   getChat,
   getActiveChat,
+  getOrCreateActiveChat,
   getActiveChatId,
   setActiveChat,
   listChats,

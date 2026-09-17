@@ -386,7 +386,7 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
   }
 
   async function runTurn(userParts, send, chatId) {
-    const targetChatId = chatId || history.getActiveChatId(userData) || 'default'
+    const targetChatId = chatId || history.getOrCreateActiveChat(userData, { preferVisible: true }).id
     if (activeRuns.has(targetChatId)) {
       activeRuns.get(targetChatId).abort()
     }

@@ -28,6 +28,7 @@ const shellHook = require('./recall/shell-hook.cjs')
 const recallStore = require('./recall/store.cjs')
 const browserLinkMod = require('./recall/browser-link.cjs')
 const geminiAudio = require('./chat/gemini-audio.cjs')
+const { createCredentialStore, publicConfig, mergeRendererConfig, writeConfigAtomic, GEMINI_BASE_URL } = require('./credentials.cjs')
 
 Menu.setApplicationMenu(null)
 
@@ -414,6 +415,8 @@ function loadConfig() {
     pttHotkey: 'Alt+X'
   }
   config.audio = { ...audioDefaults, ...(config.audio ?? {}) }
+  const migration = credentials.migrate()
+  if (!migration.ok) runtimeIssue('credential migration could not be saved')
   syncSystemDriveGrant()
   applyAutoStart()
   return config
@@ -439,20 +442,33 @@ function syncSystemDriveGrant() {
 
 let saveTimer = null
 
-function saveConfig() {
+function saveConfigNow(candidate = config) {
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    try {
-      fs.writeFileSync(configPath(), JSON.stringify(config, null, 2))
-    } catch {
-      /* best effort */
-    }
-  }, 300)
+  saveTimer = null
+  try {
+    writeConfigAtomic(configPath(), candidate)
+    return true
+  } catch {
+    runtimeIssue('config save failed')
+    return false
+  }
 }
 
+function saveConfig() {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => saveConfigNow(), 300)
+}
+
+const credentials = createCredentialStore({
+  getConfig: () => config,
+  setConfig: next => { config = next },
+  safeStorage,
+  persist: saveConfigNow
+})
+
 function broadcastConfig() {
-  for (const w of [win, settingsWin]) {
-    if (w && !w.isDestroyed()) w.webContents.send('config:changed', config)
+  for (const w of [win, settingsWin, chatWin]) {
+    if (w && !w.isDestroyed()) w.webContents.send('config:changed', publicConfig(config))
   }
 }
 
@@ -546,7 +562,7 @@ function createWindow() {
   winX = x
   winY = y
 
-  console.log('[main] config:', JSON.stringify(config))
+  console.log('[main] config:', JSON.stringify(publicConfig(config)))
   console.log('[main] displays count:', screen.getAllDisplays().length)
   console.log('[main] creating window at coords:', x, y)
 
@@ -1279,24 +1295,24 @@ function getChat() {
         if (action.type === 'set_shape') {
           config.shape = action.shape
           saveConfig()
-          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
-          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', publicConfig(config))
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', publicConfig(config))
         } else if (action.type === 'set_expression') {
           config.expression = action.expression
           saveConfig()
-          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
-          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', publicConfig(config))
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', publicConfig(config))
         } else if (action.type === 'set_color') {
           config.color = action.color
           saveConfig()
-          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
-          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', publicConfig(config))
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', publicConfig(config))
         } else if (action.type === 'set_size') {
           // Gleiche Spanne wie der Size-Slider in den Settings (150-280)
           config.ballSize = Math.min(280, Math.max(150, Math.round(action.ballSize)))
           saveConfig()
-          if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
-          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', config)
+          if (win && !win.isDestroyed()) win.webContents.send('config:changed', publicConfig(config))
+          if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('config:changed', publicConfig(config))
         } else if (action.type === 'play_animation') {
           if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', action.animation, action.durationSeconds)
         } else if (action.type === 'play_custom_animation') {
@@ -1631,29 +1647,19 @@ function attachPttBlurGuard() {
 
 /* ------------------------------------------------------ api-key store */
 
-function setApiKey(plain) {
-  if (!plain) {
-    config.chat.apiKeyEnc = ''
-  } else if (safeStorage.isEncryptionAvailable()) {
-    config.chat.apiKeyEnc = safeStorage.encryptString(plain).toString('base64')
-  } else {
-    // Kein DPAPI: Schluessel wird bewusst NICHT gespeichert
-    console.warn('[main] safeStorage unavailable - API key not persisted')
-    return false
-  }
-  saveConfig()
-  return true
+function getApiKey() {
+  return credentials.getChatKey()
 }
 
-function getApiKey() {
-  if (!config.chat.apiKeyEnc) return ''
-  try {
-    if (!safeStorage.isEncryptionAvailable()) return ''
-    return safeStorage.decryptString(Buffer.from(config.chat.apiKeyEnc, 'base64'))
-  } catch {
-    return ''
-  }
+function saveCredential(save) {
+  const result = save()
+  if (result.ok) broadcastConfig()
+  return result
 }
+
+ipcMain.handle('provider:set-api-key', (_e, providerName, key) =>
+  saveCredential(() => credentials.setProviderKey(providerName, key)))
+ipcMain.handle('provider:key-status', (_e, providerName) => credentials.providerStatus(providerName))
 
 /* --------------------------------------------------------- chat ipc */
 
@@ -1691,7 +1697,31 @@ ipcMain.on('chat:abort', (_e, payload) => {
   queueDrawHide()
 })
 
-ipcMain.handle('chat:models', () => require('./chat/model-catalog.cjs').catalog(config.chat))
+const savedModels = require('./chat/saved-models.cjs')
+async function configuredModels() {
+  const rows = savedModels.choices(config.chat, name => credentials.providerStatus(name).hasKey)
+  return require('./chat/model-catalog.cjs').describeChoices(rows)
+}
+ipcMain.handle('chat:models', configuredModels)
+ipcMain.handle('chat:edit-models', (_e, action, id) => {
+  try {
+    const next = { ...config, chat: savedModels.editModels(config.chat, action, id) }
+    if (!saveConfigNow(next)) return { ok: false, error: 'Could not save models.' }
+    config = next
+    broadcastConfig()
+    return { ok: true }
+  } catch (error) { return { ok: false, error: error.message } }
+})
+ipcMain.handle('chat:select-model', async (_e, key, level) => {
+  const row = (await configuredModels()).find(m => m.key === key)
+  if (!row) return { ok: false, error: 'This model is no longer configured.' }
+  const next = mergeRendererConfig(config, { chat: { baseUrl: row.baseUrl, protocol: row.protocol, model: row.id, reasoningLevel: row.levels.includes(level) ? level : '' } })
+  next.chat.modelProfiles = savedModels.rememberTransition(config.chat, next.chat)
+  if (!saveConfigNow(next)) return { ok: false, error: 'Could not save model selection.' }
+  config = next
+  broadcastConfig()
+  return { ok: true }
+})
 ipcMain.handle('chat:list', () => history.listChats(app.getPath('userData')))
 ipcMain.handle('chat:get', (_e, id) => history.getChat(app.getPath('userData'), id))
 ipcMain.handle('chat:new', (_e, title) => history.createChat(app.getPath('userData'), title))
@@ -1748,13 +1778,10 @@ ipcMain.handle('chat:clear-memory', () => {
   return result
 })
 
-ipcMain.handle('chat:get-api-key-status', () => ({ hasKey: !!config.chat.apiKeyEnc }))
+ipcMain.handle('chat:get-api-key-status', () => credentials.chatStatus())
 
-ipcMain.handle('chat:set-api-key', (_e, key) => {
-  const ok = setApiKey(String(key ?? '').trim())
-  broadcastConfig()
-  return { ok }
-})
+ipcMain.handle('chat:set-api-key', (_e, key) =>
+  saveCredential(() => credentials.setChatKey(key)))
 
 ipcMain.handle('hotkey:set', (_e, combo) => {
   config.chat.chatHotkey = String(combo ?? '').trim() || 'Super+Alt+X'
@@ -1785,11 +1812,7 @@ ipcMain.handle('voice:start', (event, requestId) => {
   liveVoiceSessions.get(sender.id)?.session.close()
   try {
     const provider = config.audio?.liveProvider === 'openai' ? 'openai' : 'gemini'
-    let apiKey = getAudioApiKey()
-    if (provider === 'openai') {
-      apiKey = config.audio?.transcriptionKeyEnc && safeStorage.isEncryptionAvailable()
-        ? safeStorage.decryptString(Buffer.from(config.audio.transcriptionKeyEnc, 'base64')) : ''
-    }
+    const apiKey = credentials.getProviderKey(provider)
     let removeListeners = () => {}
     const session = require('./chat/live-voice.cjs').connectVoice({ provider, apiKey, emit: payload => {
       if (!sender.isDestroyed()) sender.send('voice:event', { ...payload, requestId })
@@ -1814,55 +1837,24 @@ ipcMain.on('voice:stop', (event, requestId) => {
 let audioSpeechStreamSeq = 0
 
 function getAudioApiKey() {
-  if (!config.audio?.apiKeyEnc) return ''
-  try {
-    if (!safeStorage.isEncryptionAvailable()) return ''
-    return safeStorage.decryptString(Buffer.from(config.audio.apiKeyEnc, 'base64'))
-  } catch {
-    return ''
-  }
+  return credentials.getProviderKey('gemini')
 }
 
-function setAudioApiKey(plain) {
-  if (!plain) {
-    if (config.audio) config.audio.apiKeyEnc = ''
-  } else if (safeStorage.isEncryptionAvailable()) {
-    config.audio.apiKeyEnc = safeStorage.encryptString(plain).toString('base64')
-  } else {
-    console.warn('[main] safeStorage unavailable - audio API key not persisted')
-    return false
-  }
-  saveConfig()
-  return true
-}
-
-ipcMain.handle('audio:set-api-key', (_e, key) => {
-  const ok = setAudioApiKey(String(key ?? '').trim())
-  return { ok }
-})
-
-// Nur true/false zurueckgeben — der Key selbst verlässt den Main nie.
-ipcMain.handle('audio:has-key', () => ({ hasKey: !!config.audio?.apiKeyEnc }))
-
-ipcMain.handle('audio:set-transcription-key', (_e, key) => {
-  const plain = String(key ?? '').trim()
-  if (plain && !safeStorage.isEncryptionAvailable()) return { ok: false }
-  config.audio.transcriptionKeyEnc = plain ? safeStorage.encryptString(plain).toString('base64') : ''
-  saveConfig()
-  broadcastConfig()
-  return { ok: true }
-})
-ipcMain.handle('audio:has-transcription-key', () => ({ hasKey: !!config.audio?.transcriptionKeyEnc }))
+ipcMain.handle('audio:set-api-key', (_e, key) =>
+  saveCredential(() => credentials.setProviderKey('gemini', key)))
+ipcMain.handle('audio:has-key', () => credentials.providerStatus('gemini'))
+ipcMain.handle('audio:set-transcription-key', (_e, key) =>
+  saveCredential(() => credentials.setProviderKey('openai', key)))
+ipcMain.handle('audio:has-transcription-key', () => credentials.providerStatus('openai'))
 
 function transcribeRecording(audioBuffer, mime) {
-  let apiKey = ''
-  try {
-    if (config.audio?.transcriptionKeyEnc && safeStorage.isEncryptionAvailable()) {
-      apiKey = safeStorage.decryptString(Buffer.from(config.audio.transcriptionKeyEnc, 'base64'))
-    }
-  } catch { /* The provider reports the missing key without exposing credentials. */ }
+  const transcriptionProvider = config.audio?.transcriptionProvider || 'openai'
+  if (transcriptionProvider === 'gemini') {
+    return geminiAudio.transcribe({ apiKey: getAudioApiKey(), baseUrl: GEMINI_BASE_URL, audioBuffer, mime })
+  }
   return require('./chat/transcription.cjs').transcribe({
-    provider: config.audio?.transcriptionProvider || 'openai', apiKey,
+    provider: transcriptionProvider,
+    apiKey: transcriptionProvider === 'openai' ? credentials.getProviderKey('openai') : '',
     localUrl: config.audio?.whisperUrl, audioBuffer, mime
   })
 }
@@ -1881,10 +1873,9 @@ ipcMain.handle('audio:set-ptt-hotkey', (_e, combo) => {
 ipcMain.handle('audio:test', async () => {
   const apiKey = getAudioApiKey()
   if (!apiKey) return { ok: false, error: 'Gemini API key not set (Audio tab)' }
-  const a = config.audio || {}
   return await geminiAudio.ping({
     apiKey,
-    baseUrl: a.baseUrl || 'https://generativelanguage.googleapis.com/v1beta'
+    baseUrl: GEMINI_BASE_URL
   })
 })
 
@@ -1936,12 +1927,13 @@ ipcMain.handle('audio:transcribe', async (_e, payload) => {
 
 // TTS: Text -> Audio (base64). Wird vom Renderer nach einer Chat-Antwort aufgerufen.
 ipcMain.handle('audio:speak', async (_e, text) => {
+  if (config.audio?.liveProvider === 'openai') return { ok: false, data: '', error: 'Read-aloud is only available with Gemini.' }
   const apiKey = getAudioApiKey()
   if (!apiKey || !text) return { ok: false, data: '', error: apiKey ? 'empty text' : 'Gemini API key not set (Audio tab)' }
   const a = config.audio || {}
   const result = await geminiAudio.textToSpeech({
     apiKey,
-    baseUrl: a.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+    baseUrl: GEMINI_BASE_URL,
     text,
     voice: a.voice || 'Achird'
   })
@@ -1951,6 +1943,7 @@ ipcMain.handle('audio:speak', async (_e, text) => {
 
 // Streaming-TTS: PCM-Chunks sofort an den Renderer weiterreichen, statt auf die ganze WAV zu warten.
 ipcMain.handle('audio:speak-stream', (event, text) => {
+  if (config.audio?.liveProvider === 'openai') return { ok: false, error: 'Read-aloud is only available with Gemini.' }
   const apiKey = getAudioApiKey()
   const clean = String(text || '').trim().slice(0, 6000)
   if (!apiKey || !clean) {
@@ -1964,7 +1957,7 @@ ipcMain.handle('audio:speak-stream', (event, text) => {
   setImmediate(() => {
     void geminiAudio.streamTextToSpeech({
       apiKey,
-      baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+      baseUrl: GEMINI_BASE_URL,
       text: clean,
       voice: config.audio?.voice || 'Achird',
       signal: controller.signal,
@@ -1994,13 +1987,14 @@ ipcMain.handle('audio:cancel-speak', (event, requestId) => {
 })
 
 ipcMain.handle('audio:preview-voice', async (_event, voice) => {
+  if (config.audio?.liveProvider === 'openai') return { ok: false, data: '', error: 'Read-aloud is only available with Gemini.' }
   const apiKey = getAudioApiKey()
   if (!apiKey) return { ok: false, data: '', error: 'Gemini API key not set (Audio tab)' }
   const allowed = new Set(['Achird', 'Kore', 'Puck', 'Aoede', 'Sulafat', 'Leda'])
   const selected = allowed.has(String(voice)) ? String(voice) : 'Achird'
   const result = await geminiAudio.textToSpeech({
     apiKey,
-    baseUrl: config.audio?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta',
+    baseUrl: GEMINI_BASE_URL,
     text: 'Hi! I am Bloub. This is what my voice sounds like.',
     voice: selected
   })
@@ -2308,16 +2302,18 @@ ipcMain.on('ui:resize-settings', (_e, x, y, w, h) => {
   settingsWin.setBounds({ x: nx, y: ny, width, height })
 })
 
-ipcMain.handle('config:get', () => config)
+ipcMain.handle('config:get', () => publicConfig(config))
 
 ipcMain.handle('config:set', (_e, partial) => {
-  Object.assign(config, partial)
+  const previousChat = config.chat
+  config = mergeRendererConfig(config, partial)
+  config.chat.modelProfiles = savedModels.rememberTransition(previousChat, config.chat)
   syncSystemDriveGrant()
   applyAutoStart()
   saveConfig()
   broadcastConfig()
   scheduleAutoPilot()
-  return config
+  return publicConfig(config)
 })
 
 /* -------------------------------------------------------- about & updates */
@@ -2807,6 +2803,7 @@ ipcMain.handle('shell:open-external', (_e, url) => {
 function requestQuit() {
   if (isQuitting) return
   isQuitting = true
+  saveConfigNow()
   clearTimeout(petRecoveryTimer)
   clearTimeout(petRendererRecoveryTimer)
   clearTimeout(petUnresponsiveTimer)
