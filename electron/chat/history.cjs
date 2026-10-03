@@ -364,6 +364,37 @@ function loadRecords(userData, maxRecords, targetChatId) {
   return maxRecords && maxRecords > 0 ? chat.records.slice(-maxRecords) : chat.records
 }
 
+/** Vom Agent-Loop eingefuegter Hinweis ("(system note: ...)") — kein echter User-Turn. */
+function isSystemNote(record) {
+  return record?.role === 'user' &&
+    Array.isArray(record.parts) &&
+    record.parts.length === 1 &&
+    /^\(system note:/.test(record.parts[0]?.text || '')
+}
+
+/**
+ * Entfernt den letzten echten User-Turn samt allem, was danach kam (Antwort,
+ * Tool-Calls), und liefert dessen Parts — fuer "Retry"/"Regenerate". Der
+ * Aufrufer startet den Turn direkt neu; runTurn haengt den User-Record wieder an.
+ */
+function popLastUserTurn(userData, id) {
+  if (!isValidChatId(id)) return null
+  const chat = getChat(userData, id)
+  if (!chat || !Array.isArray(chat.records)) return null
+  for (let i = chat.records.length - 1; i >= 0; i--) {
+    const rec = chat.records[i]
+    if (rec.role !== 'user' || isSystemNote(rec)) continue
+    const parts = Array.isArray(rec.parts) && rec.parts.length > 0
+      ? rec.parts
+      : [{ type: 'text', text: String(rec.content ?? '') }]
+    chat.records = chat.records.slice(0, i)
+    chat.updatedAt = Date.now()
+    saveChat(userData, chat)
+    return parts
+  }
+  return null
+}
+
 /** Benennt einen Chat um. Setzt manualTitle = true falls durch User ausgelöst. */
 function renameChat(userData, id, title, isManual = true) {
   if (!isValidChatId(id)) return false
@@ -373,7 +404,8 @@ function renameChat(userData, id, title, isManual = true) {
   if (isManual) {
     chat.manualTitle = true
   }
-  chat.updatedAt = Date.now()
+  // Umbenennen ist keine neue Aktivitaet: updatedAt bleibt, damit der Chat
+  // in der nach Datum gruppierten Liste nicht nach "Today" springt.
   saveChat(userData, chat)
   return true
 }
@@ -552,7 +584,6 @@ async function generateAndSetTitle(userData, chatId, cfg, force = false) {
 
     freshChat.title = newTitle
     freshChat.autoTitled = true
-    freshChat.updatedAt = Date.now()
     saveChat(userData, freshChat)
     return newTitle
   } finally {
@@ -603,6 +634,8 @@ module.exports = {
   archiveChat,
   deleteChat,
   searchChats,
+  popLastUserTurn,
+  isSystemNote,
   generateAndSetTitle,
   archiveAndClear,
   migrateLegacyHistory,

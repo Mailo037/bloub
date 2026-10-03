@@ -25,7 +25,8 @@ contextBridge.exposeInMainWorld('bloubPet', {
   quit: () => ipcRenderer.send('pet:quit'),
   // pet: chat summon + drop target
   toggleChat: () => ipcRenderer.send('pet:request-chat-toggle'),
-  attachPaths: (paths) => ipcRenderer.invoke('chat:attach', paths),
+  attachPaths: (paths, opts) => ipcRenderer.invoke('chat:attach', paths, opts),
+  attachData: (payload) => ipcRenderer.invoke('chat:attach-data', payload),
   onPlayState: (cb) => ipcRenderer.on('pet:play-state', (_e, id, duration) => cb(id, duration)),
   onAnimationHold: (cb) => ipcRenderer.on('pet:anim-hold', (_e, hold) => cb(hold)),
   onChatVisibility: (cb) => ipcRenderer.on('ui:chat-visibility', (_e, visible) => cb(visible)),
@@ -39,6 +40,7 @@ contextBridge.exposeInMainWorld('bloubPet', {
   },
   // chat window & multi-chat
   sendChat: (payload) => ipcRenderer.invoke('chat:send', payload),
+  retryChat: (chatId) => ipcRenderer.invoke('chat:retry', { chatId }),
   showChat: () => ipcRenderer.send('ui:show-chat'),
   abortChat: (chatId) => ipcRenderer.send('chat:abort', chatId),
   hideChat: () => ipcRenderer.send('ui:hide-chat'),

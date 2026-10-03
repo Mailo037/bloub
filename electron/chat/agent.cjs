@@ -457,6 +457,10 @@ function createChat({ userData, getCfg, onPetAction, takeScreenshot, memoryFileP
                 hadError = true
                 sendWithChatId({ type: 'error', message: ev.message })
                 break
+              case 'status':
+                // Provider-Retries sichtbar machen ("Retrying (1/5) …") statt still zu warten
+                sendWithChatId({ type: 'status', text: ev.text })
+                break
               default:
                 break
             }

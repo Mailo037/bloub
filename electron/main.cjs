@@ -1457,7 +1457,13 @@ function classifyDroppedPath(p) {
   return { kind: 'unknown', name: path.basename(p), path: p, size: st.size }
 }
 
-ipcMain.handle('chat:attach', (_e, paths) => {
+/**
+ * Dateien anhaengen. Vom Pet (Drop auf den Ball) mit Vortex + automatischer
+ * Inspektion; aus dem Chatfenster mit { inspect: false } — dort landen die
+ * Chips nur im Composer und werden erst mit der naechsten Nachricht gesendet.
+ */
+ipcMain.handle('chat:attach', (_e, paths, opts) => {
+  const inspect = opts?.inspect !== false
   const chips = []
   let absorbedSomething = false
   for (const raw of paths ?? []) {
@@ -1501,7 +1507,7 @@ ipcMain.handle('chat:attach', (_e, paths) => {
       absorbedSomething = true
     }
   }
-  if (chips.length > 0) {
+  if (chips.length > 0 && inspect) {
     sendChatEvent({ type: 'attachments', chips })
     showChat()
     // Der Bloub schluckt das Angebot
@@ -1519,8 +1525,11 @@ ipcMain.handle('chat:attach', (_e, paths) => {
               'The user just dropped these files onto you. Inspect them and tell them what they are.',
               inspectIds
             )
-            sendChatEvent({ type: 'accepted', chipText: '', attachments: inspectIds })
-            await getChat().runTurn(parts, sendChatEvent)
+            // Gleicher Chat wie Dock und Chatfenster (der aktive), damit alle
+            // Events dieses Turns dieselbe chatId tragen.
+            const chatId = history.getActiveChatId(app.getPath('userData')) || undefined
+            sendChatEvent({ type: 'accepted', chipText: '', attachments: inspectIds, chatId })
+            await getChat().runTurn(parts, sendChatEvent, chatId)
             if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
           } catch (err) {
             sendChatEvent({ type: 'error', message: err?.message || String(err) })
@@ -1528,6 +1537,32 @@ ipcMain.handle('chat:attach', (_e, paths) => {
         })()
       }, 350)
     }
+  }
+  return { ok: true, chips }
+})
+
+const PASTE_IMAGE_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' }
+const PASTE_IMAGE_MAX = 20 * 1024 * 1024
+
+/** Eingefuegtes Bild (Zwischenablage, ohne Dateipfad) als Anhang ablegen. */
+ipcMain.handle('chat:attach-data', (_e, payload) => {
+  const mime = String(payload?.mime || '').toLowerCase()
+  const ext = PASTE_IMAGE_EXT[mime]
+  if (!ext) return { ok: false, error: 'Only PNG, JPEG, GIF and WebP images can be pasted.' }
+  const buf = Buffer.from(String(payload?.data || ''), 'base64')
+  if (!buf.length || buf.length > PASTE_IMAGE_MAX) return { ok: false, error: 'The image is empty or larger than 20 MB.' }
+  try {
+    const dir = path.join(app.getPath('temp'), 'bloub-paste')
+    fs.mkdirSync(dir, { recursive: true })
+    const id = `a${chatState.nextAttachmentId++}`
+    const file = path.join(dir, `${Date.now()}-${id}${ext}`)
+    fs.writeFileSync(file, buf)
+    const name = String(payload?.name || '').trim().slice(0, 120) || `pasted-image${ext}`
+    chatState.attachments.set(id, { kind: 'image', id, name, path: file, size: buf.length, temp: true })
+    const visionOk = agentMod.supportsVision(config.chat.model)
+    return { ok: true, chip: { kind: 'image', id, name, size: buf.length, note: visionOk ? undefined : 'needs vision model' } }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) }
   }
 })
 
@@ -1559,6 +1594,8 @@ async function buildUserParts(text, attachmentIds) {
       /* Datei verschwunden -> ignorieren */
     }
     chatState.attachments.delete(id)
+    // Eingefuegte Bilder liegen nur als Temp-Datei vor — nach dem Lesen weg damit.
+    if (att.temp) fs.promises.unlink(att.path).catch(() => {})
   }
   return parts.length > 0 ? parts : [{ type: 'text', text: '(empty message)' }]
 }
@@ -1669,16 +1706,15 @@ ipcMain.on('ui:hide-chat', () => hideChat())
 
 ipcMain.on('pet:request-chat-toggle', () => toggleChat())
 
-ipcMain.handle('chat:send', async (_e, payload) => {
-  const parts = await buildUserParts(payload?.text, payload?.attachmentIds)
-  const chatId = payload?.chatId || history.getActiveChatId(app.getPath('userData')) || 'default'
+/** Einen User-Turn ausfuehren (Senden oder Retry). */
+async function runUserTurn(sender, parts, chatId, chipText, attachmentIds) {
   // Keep a window-originated turn's UI events in that window, including
   // provider errors. Do not open an unsolicited reply bubble under the pet.
-  const fromChatWindow = chatWin && !chatWin.isDestroyed() && _e.sender === chatWin.webContents
+  const fromChatWindow = chatWin && !chatWin.isDestroyed() && sender === chatWin.webContents
   const emitTurn = fromChatWindow
-    ? (ev) => { if (!_e.sender.isDestroyed()) _e.sender.send('chat:event', { ...ev, chatId }) }
+    ? (ev) => { if (!sender.isDestroyed()) sender.send('chat:event', { ...ev, chatId }) }
     : sendChatEvent
-  emitTurn({ type: 'accepted', chipText: payload?.text?.trim() ?? '', attachments: payload?.attachmentIds ?? [], chatId })
+  emitTurn({ type: 'accepted', chipText, attachments: attachmentIds, chatId })
   try {
     await getChat().runTurn(parts, emitTurn, chatId)
   } catch (err) {
@@ -1688,6 +1724,23 @@ ipcMain.handle('chat:send', async (_e, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send('pet:play-state', 'wink')
   chatVisible = false
   return true
+}
+
+ipcMain.handle('chat:send', async (_e, payload) => {
+  const parts = await buildUserParts(payload?.text, payload?.attachmentIds)
+  const chatId = payload?.chatId || history.getActiveChatId(app.getPath('userData')) || 'default'
+  return runUserTurn(_e.sender, parts, chatId, payload?.text?.trim() ?? '', payload?.attachmentIds ?? [])
+})
+
+// Retry/Regenerate: letzten User-Turn samt Antwort entfernen und erneut ausfuehren.
+ipcMain.handle('chat:retry', async (_e, payload) => {
+  const ud = app.getPath('userData')
+  const chatId = payload?.chatId || history.getActiveChatId(ud)
+  if (!chatId || getChat().isBusy(chatId)) return false
+  const parts = history.popLastUserTurn(ud, chatId)
+  if (!parts) return false
+  const chipText = parts.find((p) => p.type === 'text' && !String(p.text).startsWith('\n\n[attached'))?.text ?? ''
+  return runUserTurn(_e.sender, parts, chatId, chipText.trim(), [])
 })
 
 ipcMain.on('chat:abort', (_e, payload) => {
@@ -1773,8 +1826,8 @@ ipcMain.handle('chat:test-provider', async () => {
 
 ipcMain.handle('chat:clear-memory', () => {
   const result = history.archiveAndClear(app.getPath('userData'))
-  // Pet-Fenster benachrichtigen, damit die UI die letzte Antwort entfernt
-  if (win && !win.isDestroyed()) win.webContents.send('chat:event', { type: 'archived' })
+  // Pet-Dock und Chatfenster benachrichtigen, damit beide den frischen Chat zeigen
+  sendChatEvent({ type: 'archived' })
   return result
 })
 
@@ -2791,12 +2844,36 @@ ipcMain.handle('app:install-update', async (_e, { downloadUrl } = {}) => {
   return { ok: true, updated: true }
 })
 
-ipcMain.handle('shell:open-external', (_e, url) => {
+function openSafeExternal(url) {
   if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://') || url.startsWith('mailto:'))) {
     shell.openExternal(url)
     return true
   }
   return false
+}
+
+ipcMain.handle('shell:open-external', (_e, url) => openSafeExternal(url))
+
+// Links aus AI-Antworten duerfen nie ein App-Fenster wegnavigieren oder neue
+// Electron-Fenster oeffnen: sichere Ziele gehen an den Standard-Browser.
+app.on('web-contents-created', (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    openSafeExternal(url)
+    return { action: 'deny' }
+  })
+  contents.on('will-navigate', (event, url) => {
+    // Eigene Seite (Dev-Server-Reload) darf bleiben, alles andere nicht.
+    let sameApp = url === contents.getURL()
+    try {
+      const target = new URL(url).origin
+      sameApp ||= target !== 'null' && target === new URL(contents.getURL()).origin
+    } catch {
+      /* unparsebar -> blocken */
+    }
+    if (sameApp) return
+    event.preventDefault()
+    openSafeExternal(url)
+  })
 })
 
 

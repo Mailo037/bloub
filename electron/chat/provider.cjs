@@ -89,6 +89,15 @@ function sleepWithSignal(ms, signal) {
 const MAX_RETRIES = 5
 
 /**
+ * Nur voruebergehende Fehler lohnen einen neuen Versuch. Falscher Key (401/403),
+ * unbekanntes Modell (404) oder kaputte Anfrage (400/422) scheitern beim
+ * naechsten Mal genauso — dort sofort melden statt ~30 s Backoff abzuwarten.
+ */
+function isRetryableStatus(status) {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500
+}
+
+/**
  * Führt einen Streaming-Chat-Turn aus und ruft `onEvent` mit normalisierten
  * Events auf: { type:'token', text } | { type:'tool_call', id, name, argsJson }
  * | { type:'done', usage? }.
@@ -149,6 +158,11 @@ async function streamChat(cfg, normalizedRequest, signal, onEvent) {
 
     if (!res.ok || !res.body) {
       lastError = await readError(res)
+      if (!res.ok && !/^\d{3}\b/.test(lastError)) lastError = `${res.status} · ${lastError}`
+      if (!res.ok && !isRetryableStatus(res.status)) {
+        onEvent({ type: 'error', message: lastError })
+        return
+      }
       attempt++
       if (attempt <= MAX_RETRIES) {
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 16000) + Math.floor(Math.random() * 300)
