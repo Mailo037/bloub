@@ -17,7 +17,10 @@
     "pack": "vite build && electron-builder --dir",
     "dist": "vite build && electron-builder",
     "dist:win": "vite build && electron-builder --win",
-    "dist:portable": "vite build && electron-builder --win portable"
+    "dist:portable": "vite build && electron-builder --win portable",
+    "website:dev": "vite --config website/vite.config.ts",
+    "website:build": "vite build --config website/vite.config.ts",
+    "website:preview": "vite preview --config website/vite.config.ts"
   },
   "build": {
     "appId": "com.bloub.pet",

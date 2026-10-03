@@ -1,0 +1,92 @@
+name: Website
+
+# Baut die Landing Page (website/) und veroeffentlicht sie auf GitHub Pages.
+# Pages liefert den Branch `gh-pages` aus; den schreibt der publish-Job bei
+# jedem Lauf komplett neu (ein einzelner Commit, keine wachsende Historie).
+# Neu gebaut wird bei Aenderungen an der Seite oder ihren App-Quellen und bei
+# jedem veroeffentlichten Release, damit auch das vorgerenderte HTML die
+# neueste Version zeigt. Die Seite selbst laedt das Release zusaetzlich live.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'vendor/bot/**'
+      - 'vendor/ui/**'
+      - 'src/shared.ts'
+      - 'electron/assets/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - '.github/workflows/website.yml'
+  pull_request:
+    paths:
+      - 'website/**'
+      - 'vendor/bot/**'
+      - 'vendor/ui/**'
+      - 'src/shared.ts'
+      - 'electron/assets/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - '.github/workflows/website.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: pnpm exec tsc --noEmit -p .
+      - run: pnpm run website:build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: website
+          path: website/dist
+          retention-days: 1
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: website
+          path: site
+      - name: Push to gh-pages
+        working-directory: site
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Deploy website from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

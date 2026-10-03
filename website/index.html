@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bloub Pet — a little AI that lives on your desktop</title>
+  <meta name="description" content="Bloub is a morphing, blinking desktop pet for Windows you can chat with. Bring any model — OpenAI, Claude, Ollama, LM Studio. Open source, MIT.">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta property="og:title" content="Bloub Pet — a little AI that lives on your desktop">
+  <meta property="og:description" content="A morphing, blinking desktop pet for Windows you can chat with, using any AI model.">
+  <link rel="icon" type="image/png" href="../electron/assets/bloub-32.png">
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./main.ts"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top">
+      <img src="../electron/assets/bloub-256.png" alt="" width="26" height="26">
+      <span>Bloub Pet</span>
+    </a>
+    <div class="nav-links">
+      <a href="#desktop">Desktop</a>
+      <a href="#chat">Chat</a>
+      <a href="#studio">Customize</a>
+      <a href="#tools">Tools</a>
+    </div>
+    <div class="nav-actions">
+      <a class="pill pill-secondary pill-sm" href="https://github.com/Mailo037/bloub">GitHub</a>
+      <a class="pill pill-primary pill-sm" href="#download">Download</a>
+    </div>
+  </div>
+</nav>
+
+<header id="top" class="hero">
+  <button type="button" class="hero-bot" id="hero-bot" aria-label="Tap Bloub">
+    <svg class="bot" viewBox="-130 -130 260 260" aria-hidden="true"></svg>
+  </button>
+  <div class="badge">
+    <span class="badge-tag" data-release-text="version">Latest</span>
+    <span>Windows · open source · MIT</span>
+  </div>
+  <h1>A little AI that lives on your desktop.</h1>
+  <p class="hero-lead">Bloub is a morphing, blinking desktop pet you can chat with. Bring any model — OpenAI, Claude, Ollama, LM Studio — and let it read files, search and help out on your machine.</p>
+  <div class="hero-ctas">
+    <a class="pill pill-primary pill-lg" href="#download">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download for Windows
+    </a>
+    <a class="pill pill-secondary pill-lg" href="https://github.com/Mailo037/bloub">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      View source
+    </a>
+  </div>
+  <p class="hint">Tap Bloub. It notices your cursor, too.</p>
+</header>
+
+<!-- Spiegelt src/index.html + src/style.css (Pet, Edit-Button, Chat-Dock, Kontextmenue) -->
+<section id="desktop" class="section">
+  <div class="wrap split">
+    <div class="intro">
+      <span class="eyebrow">On your desktop</span>
+      <h2>Drop it anywhere. Talk to it right there.</h2>
+      <p class="lead">Bloub floats in a transparent, frameless window. Drag it across monitors, click it to open a chat dock underneath, or right-click for the menu.</p>
+      <ul class="bullets">
+        <li>Smooth dragging across screens</li>
+        <li>Chat dock with dictation and quick replies</li>
+        <li>Idle, talk, wink, bounce and custom animations</li>
+      </ul>
+    </div>
+
+    <div class="stage" aria-hidden="true">
+      <div class="stage-bot">
+        <svg class="bot" id="desk-bot" viewBox="-130 -130 260 260"></svg>
+        <div class="edit-btn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </div>
+      </div>
+
+      <div class="dock">
+        <div class="reply">
+          <span class="glimmer" id="desk-thinking">Thinking…</span>
+          <span id="desk-reply"></span>
+        </div>
+        <div class="input-row">
+          <span class="prompt" id="desk-prompt">Rename these screenshots by date?</span>
+          <span class="send">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="menu">
+        <div class="menu-item is-hover">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Open chat</span>
+        </div>
+        <div class="menu-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </div>
+        <div class="menu-sep"></div>
+        <div class="menu-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Close pet</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Statische Kopie von src/chat.html + src/chat.css -->
+<section id="chat" class="section">
+  <div class="wrap stack">
+    <div class="intro intro-center">
+      <span class="eyebrow">Chat window</span>
+      <h2>A real chat app, when the dock isn't enough.</h2>
+      <p class="lead">Searchable chat list, visible work steps, Markdown with tables and copyable code, one-click retry, and attachments by button, drag &amp; drop or paste.</p>
+    </div>
+
+    <div class="chatwin" aria-hidden="true">
+      <div class="cw-header">
+        <div class="cw-group">
+          <span class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span>
+          <span class="icon-btn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M16 3l5 5-9 9-5 1 1-5Z"/></svg></span>
+        </div>
+        <div class="cw-title-wrap"><span class="cw-title">Workspace cleanup</span></div>
+        <div class="cw-group">
+          <span class="win-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+          <span class="win-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg></span>
+          <span class="win-btn win-close">✕</span>
+        </div>
+      </div>
+
+      <div class="cw-messages">
+        <div class="msg-user"><div class="bubble">What's eating all the space in my projects folder?</div></div>
+        <div class="msg-ai">
+          <div class="activity">
+            <div class="activity-summary">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="chevron-open"><path d="m9 18 6-6-6-6"/></svg>
+              <span>Used 3 tools</span>
+            </div>
+            <div class="activity-list">
+              <span>Inspected directory tree · ~/projects</span>
+              <span>Searched for node_modules</span>
+              <span>Read system info</span>
+            </div>
+          </div>
+          <div class="answer">
+            <p>Mostly build leftovers. The three biggest:</p>
+            <div class="md-table">
+              <div class="th">Folder</div><div class="th">Size</div>
+              <div><code>site/node_modules</code></div><div>2.4 GB</div>
+              <div><code>game/release</code></div><div>1.1 GB</div>
+              <div><code>api/.cache</code></div><div>640 MB</div>
+            </div>
+            <p>Want me to clear the caches? I'll ask before deleting anything.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cw-composer">
+        <div class="composer-pill">
+          <span class="c-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+          <span class="placeholder">Message Bloub…</span>
+          <div class="c-right">
+            <span class="effort">Medium</span>
+            <span class="c-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/><path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 17v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+            <span class="c-btn c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></span>
+          </div>
+        </div>
+        <p class="composer-hint">Enter to send · Shift+Enter for a new line</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Formen und Farben kommen zur Laufzeit aus vendor/bot/skins.ts -->
+<section id="studio" class="section">
+  <div class="wrap split">
+    <div class="preview">
+      <div class="preview-bot"><svg class="bot" id="studio-bot" viewBox="-130 -130 260 260" aria-hidden="true"></svg></div>
+      <div class="chips">
+        <span class="chip" id="shape-label">squircle</span>
+        <span class="chip" id="color-label">blue</span>
+      </div>
+    </div>
+
+    <div class="intro">
+      <span class="eyebrow">Make it yours</span>
+      <h2><span data-count="shapes">19</span> shapes. <span data-count="colors">22</span> colors. One very expressive face.</h2>
+      <p class="lead">Every shape morphs smoothly into the next, and the eyes keep their volume on any silhouette. Try it — the Bloub at the top changes too.</p>
+      <div class="picker picker-first">
+        <span class="picker-label" id="shape-heading">Shape</span>
+        <div class="shape-list" id="shape-list" role="group" aria-labelledby="shape-heading"></div>
+      </div>
+      <div class="picker">
+        <span class="picker-label" id="color-heading">Color</span>
+        <div class="color-list" id="color-list" role="group" aria-labelledby="color-heading"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Protokolle wie in electron/chat/provider.cjs -->
+<section id="models" class="section">
+  <div class="wrap models">
+    <div class="intro intro-narrow">
+      <span class="eyebrow">Bring your own model</span>
+      <h2>Cloud or local. Your key, your call.</h2>
+      <p class="lead">Bloub speaks three protocols, so it works with nearly any provider — including models running on your own machine.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <code class="card-id">openai-completions</code>
+        <span class="card-name">OpenAI Completions</span>
+        <div class="chip-list">
+          <span class="provider">OpenAI</span>
+          <span class="provider">Ollama</span>
+          <span class="provider">LM Studio</span>
+          <span class="provider">OpenRouter</span>
+        </div>
+      </div>
+      <div class="card">
+        <code class="card-id">openai-responses</code>
+        <span class="card-name">OpenAI Responses</span>
+        <div class="chip-list">
+          <span class="provider">OpenAI</span>
+        </div>
+      </div>
+      <div class="card">
+        <code class="card-id">anthropic-messages</code>
+        <span class="card-name">Anthropic Messages</span>
+        <div class="chip-list">
+          <span class="provider">Claude</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!--
+  Tools und Standardwerte wie in electron/chat/tools.cjs (TOOLS_FOR_MODEL) und
+  electron/chat/agent.cjs (chatDefaults). Die Schalter sind nur Demo und werden
+  nicht gespeichert; sie starten auf den Standardwerten der App.
+-->
+<section id="tools" class="section">
+  <div class="wrap split split-top">
+    <div class="intro tools-intro">
+      <span class="eyebrow">Agent tools</span>
+      <h2>Helpful hands, on a short leash.</h2>
+      <p class="lead">Bloub can work on your machine, within limits you set. It only sees folders you grant, edits nothing until you allow it, and has no terminal unless you switch it on. One switch turns all tools off.</p>
+      <span class="tool-count" id="tool-count">6 of 7 tools enabled — tap to toggle</span>
+    </div>
+    <div class="tool-list" id="tool-list">
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Read &amp; edit files</span><span class="tool-desc">Only inside folders you grant. Read-only by default; editing needs read &amp; write access. Secrets stay hidden unless you allow them.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Directory tree</span><span class="tool-desc">Inspect the structure of granted folders.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Search</span><span class="tool-desc">Find files and text across granted folders.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">System info</span><span class="tool-desc">OS, memory and hardware details. Available whenever tools are on.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Memory</span><span class="tool-desc">Remembers facts across chats. On by default; turn it off or clear it any time.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Desktop screenshots</span><span class="tool-desc">Lets Bloub see what you see — one or all monitors. Available whenever tools are on.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="false">
+        <span class="tool-text"><span class="tool-name">Shell</span><span class="tool-desc">Runs terminal commands with your user's permissions — not sandboxed. Off until you enable Terminal access.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!--
+  Version, Datum und Links kommen aus dem neuesten GitHub-Release (release.ts):
+  beim Build ins HTML geschrieben und bei jedem Aufruf live aktualisiert.
+  Die Texte hier sind nur der Ladezustand. Nichts davon von Hand pflegen.
+-->
+<section id="download" class="section">
+  <div class="wrap download">
+    <div class="dl-intro">
+      <img class="dl-logo" src="../electron/assets/bloub-256.png" alt="" width="72" height="72">
+      <h2>Adopt a Bloub.</h2>
+      <p class="lead" data-release-text="sub">The latest release for Windows x64. Pick whichever build suits you.</p>
+    </div>
+    <div class="dl-list">
+      <div class="dl-row">
+        <div class="dl-info">
+          <span class="dl-title">Installer <span class="tag">Recommended</span></span>
+          <code class="dl-meta" data-release-text="installer">Loading…</code>
+        </div>
+        <a class="k-btn k-btn-primary" data-release-href="installer" href="https://github.com/Mailo037/bloub/releases/latest">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download
+        </a>
+      </div>
+      <div class="dl-row">
+        <div class="dl-info">
+          <span class="dl-title">Portable</span>
+          <code class="dl-meta" data-release-text="portable">Loading…</code>
+        </div>
+        <a class="k-btn" data-release-href="portable" href="https://github.com/Mailo037/bloub/releases/latest">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download
+        </a>
+      </div>
+      <div class="dl-row">
+        <div class="dl-info">
+          <span class="dl-title">Portable ZIP</span>
+          <code class="dl-meta" data-release-text="zip">Loading…</code>
+        </div>
+        <a class="k-btn" data-release-href="zip" href="https://github.com/Mailo037/bloub/releases/latest">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download
+        </a>
+      </div>
+    </div>
+    <p class="source">Or build from source: <code>pnpm install &amp;&amp; pnpm run dev</code></p>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="foot">
+    <div class="foot-brand">
+      <img src="../electron/assets/bloub-256.png" alt="" width="18" height="18">
+      <span>Bloub Pet · MIT · by Mailo037</span>
+    </div>
+    <span>Avatar engine based on <a href="https://github.com/jeremy-prt/bloub">jeremy-prt/bloub</a> (MIT). Not affiliated with x.ai.</span>
+  </div>
+</footer>
+
+</body>
+</html>

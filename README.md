@@ -37,6 +37,18 @@ pnpm exec electron tools/test-chat-experience.cjs
 pnpm run dist
 ```
 
+## Website
+
+The landing page lives in `website/` and reuses the app's avatar engine and styles.
+Version and download links always come from the latest GitHub release, so they never
+need manual updates. It is live at https://mailo037.github.io/bloub/: the
+`.github/workflows/website.yml` workflow builds it and publishes it to the `gh-pages` branch.
+
+```bash
+pnpm run website:dev     # dev server
+pnpm run website:build   # static build in website/dist
+```
+
 ## Release Artifacts
 
 Electron builds are placed in `release/`:
