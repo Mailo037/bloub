@@ -240,42 +240,46 @@
   </div>
 </section>
 
-<!-- Tools wie in electron/chat/tools.cjs; die Schalter sind nur Demo und werden nicht gespeichert -->
+<!--
+  Tools und Standardwerte wie in electron/chat/tools.cjs (TOOLS_FOR_MODEL) und
+  electron/chat/agent.cjs (chatDefaults). Die Schalter sind nur Demo und werden
+  nicht gespeichert; sie starten auf den Standardwerten der App.
+-->
 <section id="tools" class="section">
   <div class="wrap split split-top">
     <div class="intro tools-intro">
       <span class="eyebrow">Agent tools</span>
       <h2>Helpful hands, on a short leash.</h2>
-      <p class="lead">Bloub can work in your workspace — but every tool is sandboxed and switched on by you. Nothing runs that you haven't allowed.</p>
-      <span class="tool-count" id="tool-count">3 of 7 tools enabled — tap to toggle</span>
+      <p class="lead">Bloub can work on your machine, within limits you set. It only sees folders you grant, edits nothing until you allow it, and has no terminal unless you switch it on. One switch turns all tools off.</p>
+      <span class="tool-count" id="tool-count">6 of 7 tools enabled — tap to toggle</span>
     </div>
     <div class="tool-list" id="tool-list">
       <button type="button" class="tool-row" role="switch" aria-checked="true">
-        <span class="tool-text"><span class="tool-name">Read &amp; edit files</span><span class="tool-desc">Only inside folders you grant. Secrets stay hidden unless you allow them.</span></span>
+        <span class="tool-text"><span class="tool-name">Read &amp; edit files</span><span class="tool-desc">Only inside folders you grant. Read-only by default; editing needs read &amp; write access. Secrets stay hidden unless you allow them.</span></span>
         <span class="k-track"><span class="k-knob"></span></span>
       </button>
       <button type="button" class="tool-row" role="switch" aria-checked="true">
-        <span class="tool-text"><span class="tool-name">Directory tree</span><span class="tool-desc">Inspect the structure of a workspace.</span></span>
+        <span class="tool-text"><span class="tool-name">Directory tree</span><span class="tool-desc">Inspect the structure of granted folders.</span></span>
         <span class="k-track"><span class="k-knob"></span></span>
       </button>
       <button type="button" class="tool-row" role="switch" aria-checked="true">
         <span class="tool-text"><span class="tool-name">Search</span><span class="tool-desc">Find files and text across granted folders.</span></span>
         <span class="k-track"><span class="k-knob"></span></span>
       </button>
-      <button type="button" class="tool-row" role="switch" aria-checked="false">
-        <span class="tool-text"><span class="tool-name">System info</span><span class="tool-desc">OS, memory and hardware details.</span></span>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">System info</span><span class="tool-desc">OS, memory and hardware details. Available whenever tools are on.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Memory</span><span class="tool-desc">Remembers facts across chats. On by default; turn it off or clear it any time.</span></span>
+        <span class="k-track"><span class="k-knob"></span></span>
+      </button>
+      <button type="button" class="tool-row" role="switch" aria-checked="true">
+        <span class="tool-text"><span class="tool-name">Desktop screenshots</span><span class="tool-desc">Lets Bloub see what you see — one or all monitors. Available whenever tools are on.</span></span>
         <span class="k-track"><span class="k-knob"></span></span>
       </button>
       <button type="button" class="tool-row" role="switch" aria-checked="false">
-        <span class="tool-text"><span class="tool-name">Memory</span><span class="tool-desc">Remembers facts across chats. Clear it any time.</span></span>
-        <span class="k-track"><span class="k-knob"></span></span>
-      </button>
-      <button type="button" class="tool-row" role="switch" aria-checked="false">
-        <span class="tool-text"><span class="tool-name">Desktop screenshots</span><span class="tool-desc">Lets Bloub see what you see — one or all monitors.</span></span>
-        <span class="k-track"><span class="k-knob"></span></span>
-      </button>
-      <button type="button" class="tool-row" role="switch" aria-checked="false">
-        <span class="tool-text"><span class="tool-name">Shell</span><span class="tool-desc">Run terminal commands. Off by default, sandboxed when on.</span></span>
+        <span class="tool-text"><span class="tool-name">Shell</span><span class="tool-desc">Runs terminal commands with your user's permissions — not sandboxed. Off until you enable Terminal access.</span></span>
         <span class="k-track"><span class="k-knob"></span></span>
       </button>
     </div>

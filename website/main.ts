@@ -218,10 +218,21 @@ function deskState(id: StateId) {
   desk.engine.setState(id, clock)
 }
 
-/** Wie im Pet: denken -> 'thinking', Antwort streamt -> 'talk', danach 'idle'. */
+/**
+ * Wie im Pet: denken -> 'thinking', Antwort streamt -> 'talk', danach 'idle'.
+ * Bei reduzierter Bewegung steht die Demo still (fertige Antwort, 'idle') und
+ * laeuft erst weiter, wenn die Einstellung wieder aus ist.
+ */
 function runDesk(i: number) {
   const [prompt, reply] = DESK[i % DESK.length]!
   deskPrompt.textContent = prompt
+  if (reducedMotion.matches) {
+    deskReply.textContent = reply
+    deskThinking.hidden = true
+    deskState('idle')
+    reducedMotion.addEventListener('change', () => runDesk(i + 1), { once: true })
+    return
+  }
   deskReply.textContent = ''
   deskThinking.hidden = false
   deskState('thinking')
