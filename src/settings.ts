@@ -29,6 +29,7 @@ const sizeVal = document.getElementById('size-val')!
 // Custom-UI statt nativer Widgets (Regel: siehe docs/ai-chat-design.md)
 const eventsSwitch = createSwitch({
   label: 'Random events',
+  description: 'Bloub plays little idle animations on its own now and then.',
   onChange: (checked) => {
     void bridge.updateConfig({ eventsEnabled: checked })
   }
@@ -38,6 +39,7 @@ document.getElementById('events-toggle-slot')!.replaceChildren(eventsSwitch.el)
 // Screenshots: ALLE Monitore zu einem Bild zusammenfuegen (mit ID-Badges)
 const screenshotAllSwitch = createSwitch({
   label: 'Screenshots: all displays',
+  description: 'When Bloub looks at your screen, it captures every monitor as one image.',
   onChange: (checked) => {
     void bridge.updateConfig({ screenshotAllDisplays: checked })
   }
@@ -47,6 +49,7 @@ document.getElementById('screenshot-all-slot')!.replaceChildren(screenshotAllSwi
 // Globaler Cursor-Follow ueber alle Monitore (Blick + ID-Tag am Cursor)
 const globalCursorSwitch = createSwitch({
   label: 'Global cursor tracking',
+  description: "Bloub's eyes follow your cursor across all monitors.",
   onChange: (checked) => {
     void bridge.updateConfig({ globalCursorTracking: checked })
   }
@@ -56,6 +59,7 @@ document.getElementById('global-cursor-slot')!.replaceChildren(globalCursorSwitc
 // Beim PC-Start automatisch starten (Login-Item)
 const autostartSwitch = createSwitch({
   label: 'Start with PC',
+  description: 'Open Bloub automatically when you sign in.',
   onChange: (checked) => {
     void bridge.updateConfig({ autostart: checked })
   }
@@ -65,9 +69,9 @@ document.getElementById('autostart-toggle-slot')!.replaceChildren(autostartSwitc
 // Globale Dateizugriffs-Stufe: none / read / readwrite
 const fileAccessSeg = createSelect({
   options: [
-    { value: 'none', label: 'No access' },
-    { value: 'read', label: 'Read files' },
-    { value: 'readwrite', label: 'Read & write' }
+    { value: 'none', label: 'No access', description: "Bloub can't open any files" },
+    { value: 'read', label: 'Read files', description: 'List, read and search granted folders' },
+    { value: 'readwrite', label: 'Read & write', description: 'Also create and edit files in granted folders' }
   ],
   onChange: (value) => {
     void bridge.updateConfig({
@@ -80,6 +84,7 @@ document.getElementById('file-access-slot')!.replaceChildren(fileAccessSeg.el)
 // Terminal-Zugriff (Opt-in): shell_exec fuer die AI
 const terminalSwitch = createSwitch({
   label: 'Allow terminal commands',
+  description: 'Bloub may run commands on this PC when it helps with your request.',
   onChange: (checked) => {
     updateTerminalAccessUi(checked)
     void bridge.updateConfig({
@@ -92,13 +97,14 @@ const terminalAccessStatus = document.getElementById('terminal-access-status')!
 
 function updateTerminalAccessUi(enabled: boolean): void {
   terminalAccessStatus.textContent = enabled
-    ? 'Terminal commands are allowed with a 30 second limit.'
-    : 'Terminal commands are off.'
+    ? 'Allowed — each command may run for up to 30 seconds.'
+    : 'Off — Bloub cannot run commands.'
 }
 
 // Persistentes Memory (Opt-in): memory_write/memory_get fuer die AI
 const memorySwitch = createSwitch({
-  label: 'Memory',
+  label: 'Remember facts about me',
+  description: 'Bloub saves lasting facts (your name, preferences, projects) on this PC and recalls them in every chat.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), memoryEnabled: checked }
@@ -110,6 +116,7 @@ document.getElementById('memory-toggle-slot')!.replaceChildren(memorySwitch.el)
 // Voller Zugriff auf das Systemlaufwerk (C:\) — Opt-in, wird nicht automatisch gesetzt
 const driveSwitch = createSwitch({
   label: 'Allow Bloub to use C:\\',
+  description: 'Read and write access to the whole system drive. Only turn this on if you really need it.',
   onChange: (checked) => {
     setFullDriveAccess(checked)
   }
@@ -142,6 +149,7 @@ driveAccessBtn.addEventListener('click', () => {
 // Expressions aendern (pet_set_expression)
 const exprAccessSwitch = createSwitch({
   label: 'Change expressions',
+  description: 'Bloub may change its face to match the conversation.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), expressionAccess: checked }
@@ -153,6 +161,7 @@ document.getElementById('expr-access-slot')!.replaceChildren(exprAccessSwitch.el
 // Animationen (pet_animate / pet_stop_animation / pet_custom_animate)
 const animAccessSwitch = createSwitch({
   label: 'Play animations',
+  description: 'Bloub may hop, wiggle and react while it answers.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), animationAccess: checked }
@@ -164,6 +173,7 @@ document.getElementById('anim-access-slot')!.replaceChildren(animAccessSwitch.el
 // Aussehen aendern (pet_set_shape / pet_set_color / pet_set_size)
 const appearAccessSwitch = createSwitch({
   label: 'Change shape, color & size',
+  description: 'Bloub may restyle itself when you ask for it.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), appearanceAccess: checked }
@@ -175,6 +185,7 @@ document.getElementById('appear-access-slot')!.replaceChildren(appearAccessSwitc
 // Zeichnen auf dem Desktop (pet_draw_path)
 const drawAccessSwitch = createSwitch({
   label: 'Draw on screen',
+  description: 'Bloub may glide across your screen and draw lines, like a heart or a checkmark.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), drawAccess: checked }
@@ -207,9 +218,9 @@ maxDrawCallsInput.addEventListener('change', () => {
 // Modus: aus / unsichtbar (nur Aktionen, nie Text) / sichtbar (Antwort im Chat)
 const autoPilotModeSeg = createSelect({
   options: [
-    { value: 'off', label: 'Off' },
-    { value: 'silent', label: 'Silent' },
-    { value: 'visible', label: 'Visible' }
+    { value: 'off', label: 'Off', description: 'Bloub only acts when you ask' },
+    { value: 'silent', label: 'Silent', description: 'Animations and drawings only, never text' },
+    { value: 'visible', label: 'Visible', description: 'May also write a short message in the chat' }
   ],
   onChange: (value) => {
     void bridge.updateConfig({
@@ -463,7 +474,8 @@ const protocolSelect: SelectHandle = createSelect({
 document.getElementById('chat-protocol')!.replaceChildren(protocolSelect.el)
 
 const toolsSwitch = createSwitch({
-  label: 'Tool use',
+  label: 'Let Bloub use tools',
+  description: 'Reading granted folders, checking your system, screenshots and moving its body. Turn off for plain text chat.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), toolsEnabled: checked }
@@ -474,6 +486,7 @@ document.getElementById('chat-tools-toggle-slot')!.replaceChildren(toolsSwitch.e
 
 const voiceSwitch = createSwitch({
   label: 'Always answer with voice',
+  description: 'Read every reply aloud. Needs a Gemini key in Connections.',
   onChange: (checked) => {
     void bridge.updateConfig({
       chat: { ...(config.chat ?? {}), ...grantsInto({}), voiceAlways: checked }
@@ -484,9 +497,9 @@ document.getElementById('chat-voice-toggle-slot')!.replaceChildren(voiceSwitch.e
 
 const verbositySeg = createSelect({
   options: [
-    { value: 'concise', label: 'Concise' },
-    { value: 'balanced', label: 'Balanced' },
-    { value: 'detailed', label: 'Detailed' }
+    { value: 'concise', label: 'Concise', description: 'One or two sentences' },
+    { value: 'balanced', label: 'Balanced', description: 'Short, but with useful detail' },
+    { value: 'detailed', label: 'Detailed', description: 'Thorough, with steps and examples' }
   ],
   onChange: (value) => {
     void bridge.updateConfig({
@@ -668,16 +681,16 @@ testBtn.addEventListener('click', () => {
 // koennen gar keine nativen Dialoge zeigen, und die UI-Regel verbietet sie eh.
 clearMemoryBtn.addEventListener('click', () => {
   void confirmDialog({
-    title: 'Clear chat memory?',
-    message: 'The current history is archived to chat-history.archived-<ts>.jsonl — nothing is deleted.',
-    okLabel: 'Archive & clear',
+    title: 'Archive the current chat?',
+    message: 'Bloub forgets this conversation and starts a fresh chat. The archived chat stays on this PC — nothing is deleted. Saved facts in Memory are kept.',
+    okLabel: 'Archive & start fresh',
     danger: true
   }).then((yes) => {
     if (!yes) return
     void bridge.clearMemory?.()?.then(() => {
-      clearMemoryBtn.textContent = '(archived)'
+      clearMemoryBtn.textContent = 'Archived ✓'
       setTimeout(() => {
-        clearMemoryBtn.textContent = 'Clear memory'
+        clearMemoryBtn.textContent = 'Archive current chat'
       }, 2000)
     })
   })
@@ -920,6 +933,7 @@ document.getElementById('recall-master-slot')!.replaceChildren(recallMasterSwitc
 // Terminal capture: eigener Opt-in-Schalter neben dem Master
 const recallShellSwitch = createSwitch({
   label: 'Terminal commands',
+  description: 'Save finished commands (never keystrokes) so Bloub can answer “what did I run?”.',
   onChange: (checked) => {
     void bridge.recallSetConfig?.({ shell: checked })
     if (checked && !config.recall?.enabled) {
@@ -932,6 +946,7 @@ document.getElementById('recall-shell-slot')!.replaceChildren(recallShellSwitch.
 
 const recallClipboardSwitch = createSwitch({
   label: 'Clipboard history',
+  description: 'Keep text you copy so Bloub can find it again later.',
   onChange: (checked) => {
     void bridge.recallSetConfig?.({ clipboard: checked, ...(config.recall?.enabled === false ? { enabled: false } : {}) })
   }
@@ -1154,6 +1169,7 @@ document.getElementById('audio-voice-picker-slot')!.replaceChildren(audioVoiceSe
 
 const audioVoiceSwitch = createSwitch({
   label: 'Read replies aloud',
+  description: 'Bloub speaks each chat reply with the voice below.',
   onChange: (checked) => pushAudioConfig({ voiceEnabled: checked })
 })
 document.getElementById('audio-voice-slot')!.replaceChildren(audioVoiceSwitch.el)
@@ -1375,13 +1391,17 @@ const PAGE_COPY: Record<string, { title: string; description: string }> = {
     title: 'Appearance',
     description: 'Make the pet feel like yours. Every change is applied immediately.'
   },
+  connections: {
+    title: 'Connections',
+    description: 'Choose which AI answers your chats and save the keys it needs. Keys are stored encrypted on this PC.'
+  },
   chat: {
     title: 'Chat',
-    description: 'Connect a provider, choose how to open chat, then tune the assistant.'
+    description: 'Choose how to open the chat and how Bloub answers.'
   },
   audio: {
     title: 'Voice',
-    description: 'Set up Gemini once, then choose how Bloub listens and responds.'
+    description: 'Choose how Bloub listens to you and how it speaks back.'
   },
   pet: {
     title: 'Pet',

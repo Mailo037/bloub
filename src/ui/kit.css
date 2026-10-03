@@ -154,6 +154,27 @@
   background: #14161c;
 }
 
+.k-switch:focus-visible {
+  outline: 2px solid #7aaaff;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.k-switch-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.k-switch-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary, #a1a1aa);
+}
+
 /* ---------------------------------------------------------- dialog */
 
 .k-overlay {

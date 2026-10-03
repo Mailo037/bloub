@@ -9,37 +9,40 @@ An interactive, AI-powered desktop pet companion built with Electron, Vite, Type
 - **Desktop Companion Capabilities**:
   - Multi-monitor support with smooth cross-screen dragging
   - Transparent, frameless overlay window with drag-and-drop placement
-  - Dockable interactive chat interface with Markdown rendering and quick actions
+  - Dockable interactive chat interface with Markdown rendering (lists, tables, code with copy, links) and quick actions
+  - Chat window with searchable chat list, visible work steps, friendly error messages with one-click retry, and file/image attachments via button, drag & drop or paste
   - Built-in Agent Tools: workspace file reading/editing, directory tree inspection, search, system info, memory persistence, desktop screenshots, and shell execution (sandboxed with configurable permissions)
   - Custom animation timelines & state triggers
 - **Cross-Platform Packaging**: Automated installer (.exe), portable binary (.exe), and portable zip builds via Electron Builder.
 
 ## Development
 
-`ash
+```bash
 # Install dependencies
 pnpm install
 
 # Start development mode
 pnpm run dev
 
-# Run test suites
-node tools/test-protocol-adapters.cjs
+# Run test suites (plain Node)
 node tools/test-chat-tools.cjs
+node tools/test-persistent-chats.cjs
 
-# Build renderer
+# Build renderer, then run the Electron integration tests
 pnpm run build
+pnpm exec electron tools/test-chat-activity.cjs
+pnpm exec electron tools/test-chat-experience.cjs
 
 # Package Electron App
 pnpm run dist
-`
+```
 
 ## Release Artifacts
 
-Electron builds are placed in elease/:
-- Bloub Pet Setup <version>.exe (NSIS Installer)
-- Bloub Pet <version>.exe (Standalone Portable Executable)
-- Bloub Pet-<version>-win.zip (Portable ZIP archive)
+Electron builds are placed in `release/`:
+- `Bloub Pet Setup <version>.exe` (NSIS Installer)
+- `Bloub Pet <version>.exe` (Standalone Portable Executable)
+- `Bloub Pet-<version>-win.zip` (Portable ZIP archive)
 
 ## License
 
