@@ -37,6 +37,17 @@ pnpm exec electron tools/test-chat-experience.cjs
 pnpm run dist
 ```
 
+## Website
+
+The landing page lives in `website/` and reuses the app's avatar engine and styles.
+Version and download links always come from the latest GitHub release, so they never
+need manual updates. It deploys to GitHub Pages via `.github/workflows/website.yml`.
+
+```bash
+pnpm run website:dev     # dev server
+pnpm run website:build   # static build in website/dist
+```
+
 ## Release Artifacts
 
 Electron builds are placed in `release/`:

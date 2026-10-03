@@ -1,0 +1,78 @@
+name: Website
+
+# Baut die Landing Page (website/) und deployt sie auf GitHub Pages.
+# Neu gebaut wird bei Aenderungen an der Seite oder ihren App-Quellen und bei
+# jedem veroeffentlichten Release, damit auch das vorgerenderte HTML die
+# neueste Version zeigt. Die Seite selbst laedt das Release zusaetzlich live.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'vendor/bot/**'
+      - 'vendor/ui/**'
+      - 'src/shared.ts'
+      - 'electron/assets/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - '.github/workflows/website.yml'
+  pull_request:
+    paths:
+      - 'website/**'
+      - 'vendor/bot/**'
+      - 'vendor/ui/**'
+      - 'src/shared.ts'
+      - 'electron/assets/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - '.github/workflows/website.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: pnpm exec tsc --noEmit -p .
+      - run: pnpm run website:build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: website/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
