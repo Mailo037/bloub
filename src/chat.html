@@ -11,36 +11,36 @@
     <!-- Titlebar & Navigation -->
     <header class="chat-header">
       <div class="header-left">
-        <button id="toggle-history-btn" class="icon-btn no-drag" title="Chats" aria-label="Chats">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button id="toggle-history-btn" class="icon-btn no-drag" title="Chats (Ctrl+K)" aria-label="Chats" aria-expanded="false" aria-controls="history-drawer" aria-keyshortcuts="Control+K">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
-        <button id="new-chat-btn" class="icon-btn no-drag" title="New chat" aria-label="New chat">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
+        <button id="new-chat-btn" class="icon-btn no-drag" title="New chat" aria-label="New chat" aria-keyshortcuts="Control+N">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"></path>
+            <path d="M16 3l5 5-9 9-5 1 1-5Z"></path>
           </svg>
         </button>
       </div>
 
       <div class="header-center titlebar-drag">
         <div class="chat-title-wrap no-drag">
-          <span id="current-chat-title" class="chat-title" title="Click to rename">New chat</span>
-          <input type="text" id="rename-chat-input" class="rename-input hidden" spellcheck="false" maxlength="60" />
+          <button type="button" id="current-chat-title" class="chat-title" title="Rename chat" aria-label="Rename chat"><span class="chat-title-text">New chat</span><svg class="chat-title-edit" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <input type="text" id="rename-chat-input" class="rename-input hidden" spellcheck="false" maxlength="60" aria-label="Chat name" />
         </div>
       </div>
 
       <div class="header-right no-drag">
         <button id="win-min" class="win-btn" title="Minimize" aria-label="Minimize">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
         </button>
         <button id="win-max" class="win-btn" title="Maximize" aria-label="Maximize">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
           </svg>
         </button>
@@ -50,75 +50,102 @@
 
     <!-- Body Container: History Drawer + Conversation -->
     <div class="chat-body-container">
-      <!-- History Drawer (Slide-out / Overlay) -->
-      <aside id="history-drawer" class="history-drawer hidden">
+      <!-- History Drawer (overlay) -->
+      <aside id="history-drawer" class="history-drawer hidden" aria-label="Chats">
         <div class="drawer-header">
           <h2>Chats</h2>
-          <button id="close-history-btn" class="icon-btn" title="Close">✕</button>
+          <button id="close-history-btn" class="icon-btn" title="Close" aria-label="Close chat list">✕</button>
         </div>
         <div class="drawer-search">
-          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input type="text" id="history-search-input" placeholder="Search chats…" spellcheck="false" />
+          <input type="text" id="history-search-input" placeholder="Search chats…" spellcheck="false" aria-label="Search chats" />
         </div>
         <div id="history-list" class="history-list"></div>
       </aside>
+      <div id="drawer-scrim" class="drawer-scrim hidden" aria-hidden="true"></div>
 
       <!-- Main Messages View Area -->
       <main class="conversation-view">
-        <!-- Empty State (ChatGPT inspired) -->
+        <!-- Welcome / empty state -->
         <div id="empty-state" class="empty-state">
-          <div class="recent-chats-box">
+          <div class="welcome">
+            <div id="welcome-avatar" class="welcome-avatar" aria-hidden="true"></div>
+            <h1 id="welcome-title" class="welcome-title">Hi, I'm Bloub!</h1>
+            <p class="welcome-sub">Ask me anything, drop in a file or an image, or start with an idea below.</p>
+            <div id="setup-callout" class="setup-callout hidden" role="status">
+              <div class="setup-copy">
+                <strong>Connect an AI model first</strong>
+                <span>Bloub needs a provider and an API key before it can answer.</span>
+              </div>
+              <button type="button" id="setup-open-settings" class="primary-btn">Open Connections</button>
+            </div>
+            <div id="suggestions" class="suggestions" aria-label="Suggestions"></div>
+          </div>
+          <div id="recent-chats-box" class="recent-chats-box hidden">
             <div class="recent-header">
               <span class="recent-label">Recent chats</span>
+              <button type="button" id="btn-show-all-chats" class="link-btn">Show all</button>
             </div>
             <div id="recent-chats-list" class="recent-chips-grid"></div>
-            <button type="button" id="btn-show-all-chats" class="link-btn">Show all</button>
           </div>
         </div>
 
         <!-- Messages Flow -->
         <div id="messages-container" class="messages-container hidden"></div>
+        <button type="button" id="jump-latest" class="jump-latest hidden" title="Jump to latest" aria-label="Jump to latest message">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>
+        </button>
 
         <!-- Composer Area -->
         <div class="composer-container">
-          <div id="chat-notes-bar" class="chat-notes-bar hidden"></div>
+          <div id="attachment-tray" class="attachment-tray hidden" aria-label="Attachments"></div>
           <div class="composer-pill">
-            <button id="composer-attach-btn" class="pill-btn icon-btn" title="Attach file" aria-label="Attach file">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button id="composer-attach-btn" class="pill-btn icon-btn" title="Attach files or images" aria-label="Attach files or images">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
             </button>
-            <textarea id="standalone-input" rows="1" placeholder="Message Bloub…" spellcheck="false"></textarea>
+            <textarea id="standalone-input" rows="1" placeholder="Message Bloub…" spellcheck="false" aria-label="Message"></textarea>
             <div class="composer-actions">
               <div id="model-selector-slot"></div>
-              <button id="composer-mic-btn" class="pill-btn mic-btn" title="Voice input" aria-label="Voice input">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <button id="composer-mic-btn" class="pill-btn mic-btn" title="Dictate a message" aria-label="Dictate a message">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
                   <path d="M5 10a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                   <path d="M12 17v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                 </svg>
               </button>
               <button id="standalone-send-btn" class="pill-btn send-btn" title="Send" aria-label="Send">
-                <svg id="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg id="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <line x1="12" y1="19" x2="12" y2="5"></line>
                   <polyline points="5 12 12 5 19 12"></polyline>
                 </svg>
-                <svg id="stop-icon" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <svg id="stop-icon" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <rect x="6" y="6" width="12" height="12" rx="2"></rect>
                 </svg>
               </button>
             </div>
           </div>
+          <p id="composer-hint" class="composer-hint" aria-live="polite">Enter to send · Shift+Enter for a new line</p>
         </div>
+
+        <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
+          <div class="drop-card">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <strong>Drop to attach</strong>
+            <span>Files and images go with your next message. Folders give Bloub access.</span>
+          </div>
+        </div>
+        <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
       </main>
     </div>
   </div>
 
   <input type="file" id="hidden-file-input" style="display:none" multiple />
-  <script type="module" src="./chat.ts"></script>
+  <script type="module" src="./chat-window.ts"></script>
 </body>
 </html>
