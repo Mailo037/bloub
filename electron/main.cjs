@@ -150,6 +150,7 @@ function applyOverlayChrome(w) {
  */
 let petTaskbar = false
 let petWatchdog = null
+let petOnTopRestoring = false
 
 /** Fenster in (true) bzw. aus (false) der Taskbar legen. */
 function setPetTaskbar(inTaskbar) {
@@ -172,7 +173,9 @@ function setPetTaskbar(inTaskbar) {
  * und verschiebt das Fenster nicht.
  */
 function reassertPetOnTop() {
-  if (!win || win.isDestroyed()) return
+  if (!win || win.isDestroyed() || petOnTopRestoring) return
+  // Windows can emit always-on-top-changed synchronously while applying it.
+  petOnTopRestoring = true
   try {
     if (!win.isAlwaysOnTop()) {
       win.setAlwaysOnTop(true)
@@ -180,6 +183,8 @@ function reassertPetOnTop() {
     }
   } catch {
     /* best effort */
+  } finally {
+    petOnTopRestoring = false
   }
 }
 
