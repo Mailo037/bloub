@@ -173,6 +173,24 @@ async function run() {
     check('chat_set_title executes successfully', titleToolRes.ok === true)
     check('chat_set_title strictly caps to 5 words', toolRenamed === 'Refactored Architecture Overview Document For')
 
+    // 7. Retry: letzten User-Turn entfernen
+    console.log('\n--- 7. Retry (popLastUserTurn) ---')
+    const retryChat = history.createChat(tmpDir, 'Retry chat')
+    history.appendRecord(tmpDir, { role: 'user', parts: [{ type: 'text', text: 'first' }] }, retryChat.id)
+    history.appendRecord(tmpDir, { role: 'assistant', content: 'answer one' }, retryChat.id)
+    history.appendRecord(tmpDir, { role: 'user', parts: [{ type: 'text', text: 'second' }] }, retryChat.id)
+    history.appendRecord(tmpDir, { role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'fs_read', argsJson: '{}' }] }, retryChat.id)
+    history.appendRecord(tmpDir, { role: 'tool', toolCallId: 't1', name: 'fs_read', content: 'x' }, retryChat.id)
+    history.appendRecord(tmpDir, { role: 'user', parts: [{ type: 'text', text: '(system note: tool budget exhausted — answer now)' }] }, retryChat.id)
+    const popped = history.popLastUserTurn(tmpDir, retryChat.id)
+    check('popLastUserTurn returns the last real user message, not a system note', popped?.[0]?.text === 'second', popped)
+    const remaining = history.getChat(tmpDir, retryChat.id).records
+    check('popLastUserTurn drops the turn and everything after it', remaining.length === 2 && remaining[1].content === 'answer one', remaining)
+    check('popLastUserTurn rejects invalid ids', history.popLastUserTurn(tmpDir, '../evil') === null)
+    const renamedAt = history.getChat(tmpDir, retryChat.id).updatedAt
+    history.renameChat(tmpDir, retryChat.id, 'Renamed later', true)
+    check('renameChat keeps the activity timestamp (list order)', history.getChat(tmpDir, retryChat.id).updatedAt === renamedAt)
+
   } finally {
     // Clean up
     history.close(tmpDir)
