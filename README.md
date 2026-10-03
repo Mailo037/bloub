@@ -41,7 +41,8 @@ pnpm run dist
 
 The landing page lives in `website/` and reuses the app's avatar engine and styles.
 Version and download links always come from the latest GitHub release, so they never
-need manual updates. It deploys to GitHub Pages via `.github/workflows/website.yml`.
+need manual updates. It is live at https://mailo037.github.io/bloub/: the
+`.github/workflows/website.yml` workflow builds it and publishes it to the `gh-pages` branch.
 
 ```bash
 pnpm run website:dev     # dev server

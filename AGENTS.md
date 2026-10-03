@@ -32,8 +32,14 @@ pnpm run website:preview  # serves the build
 Don't edit the version number, release date or download links by hand. The page
 loads the latest GitHub release (`/repos/Mailo037/bloub/releases/latest`) every
 time it is opened (cached for 10 minutes per browser). The build also writes the
-latest release into the HTML, so the page is right without JS too. The GitHub Pages
-workflow (`.github/workflows/website.yml`) rebuilds on every published release.
+latest release into the HTML, so the page is right without JS too. The workflow
+`.github/workflows/website.yml` rebuilds on every published release.
+
+### Hosting
+
+GitHub Pages serves the `gh-pages` branch at https://mailo037.github.io/bloub/.
+That branch is build output only: the workflow overwrites it on every push to
+`main` that touches the site and on every release. Don't commit to it by hand.
 Shape and color counts come from `vendor/bot/skins.ts` at runtime.
 
 ### When you make a big UI change
