@@ -243,25 +243,55 @@ export interface SwitchHandle {
   setValue(v: boolean): void
 }
 
-export function createSwitch(cfg: { checked?: boolean; onChange?: (checked: boolean) => void; label?: string }): SwitchHandle {
+export function createSwitch(cfg: {
+  checked?: boolean
+  onChange?: (checked: boolean) => void
+  label?: string
+  /** Kurze Erklaerung unter dem Label: was der Schalter bewirkt */
+  description?: string
+}): SwitchHandle {
   const el = document.createElement('span')
   el.className = `k-switch${cfg.checked ? ' on' : ''}`
   el.setAttribute('role', 'switch')
+  el.tabIndex = 0
   const track = document.createElement('span')
   track.className = 'k-track'
   const knob = document.createElement('span')
   knob.className = 'k-knob'
   track.appendChild(knob)
   el.appendChild(track)
-  if (cfg.label) el.appendChild(document.createTextNode(cfg.label))
+  if (cfg.description) {
+    const copy = document.createElement('span')
+    copy.className = 'k-switch-copy'
+    const label = document.createElement('span')
+    label.className = 'k-switch-label'
+    label.textContent = cfg.label ?? ''
+    const description = document.createElement('small')
+    description.className = 'k-switch-desc'
+    description.textContent = cfg.description
+    copy.append(label, description)
+    el.appendChild(copy)
+    if (cfg.label) el.setAttribute('aria-label', cfg.label)
+    el.setAttribute('aria-description', cfg.description)
+  } else if (cfg.label) {
+    el.appendChild(document.createTextNode(cfg.label))
+  }
 
   let checked = !!cfg.checked
   el.setAttribute('aria-checked', checked ? 'true' : 'false')
-  el.addEventListener('click', () => {
+  const toggle = () => {
     checked = !checked
     el.classList.toggle('on', checked)
     el.setAttribute('aria-checked', checked ? 'true' : 'false')
     cfg.onChange?.(checked)
+  }
+  el.addEventListener('click', toggle)
+  // Tastatur: Leertaste/Enter schalten wie ein Klick
+  el.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault()
+      toggle()
+    }
   })
 
   return {

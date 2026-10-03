@@ -149,11 +149,11 @@
             <div class="well-body">
               <div class="setting-group">
                 <div id="memory-toggle-slot" class="toggle-slot"></div>
-                <p class="hint">Persistent memory remembers stable facts about you across separate chat sessions via memory_write and memory_get. Stored locally on this device in your user profile.</p>
+                <p class="hint">Saved facts stay in your user profile on this PC. Turn this off and Bloub stops saving and recalling them.</p>
               </div>
-              <div class="row-between">
-                <span class="hint">Archive or clear remembered conversation context.</span>
-                <button type="button" id="clear-memory-btn" class="k-action-btn danger">Archive chat memory</button>
+              <div class="preference-row">
+                <div class="setting-copy"><span>Start fresh</span><p>Bloub forgets the current conversation. The chat is archived, not deleted.</p></div>
+                <button type="button" id="clear-memory-btn" class="k-action-btn danger">Archive current chat</button>
               </div>
             </div>
           </section>
@@ -218,7 +218,7 @@
               </div>
               <div class="workspace-preference">
                 <div class="workspace-heading">Workspace access</div>
-                <p class="hint">Drop a folder on Bloub to grant workspace access.</p>
+                <p class="hint">Drop a folder onto Bloub or into the chat window to let Bloub work with the files inside.</p>
                 <div id="grant-list"></div>
               </div>
             </div>
@@ -270,7 +270,7 @@
                 <li>Open <button type="button" class="k-link-btn" id="audio-guide-aistudio">Google AI Studio</button> and sign in with a Google account.</li>
                 <li>Open the <button type="button" class="k-link-btn" id="audio-guide-pricing">Gemini API pricing page</button> and check the free tier limits.</li>
                 <li>In AI Studio → <b>Get API key</b> → <b>Create API key</b> — copy the key.</li>
-                <li>Paste it in Connections → Voice Engine.</li>
+                <li>Paste it in Connections → Provider keys (choose Gemini).</li>
               </ol>
             </div>
           </section>
@@ -289,13 +289,13 @@
             <h2 class="well-head"><span class="well-title">Autopilot</span></h2>
             <div class="well-body">
               <div class="preference-row">
-                <div class="setting-copy"><span>Mode</span><p class="hint">Periodically wakes the pet and lets the AI decide on its own whether it wants to do something.</p></div>
+                <div class="setting-copy"><span>Mode</span><p class="hint">Bloub checks in now and then and decides on its own whether to do something — without you asking.</p></div>
                 <div id="autopilot-mode-slot"></div>
               </div>
-              <label class="fld">Every
+              <label class="fld">Check in every
                 <div id="autopilot-interval-slot"></div>
               </label>
-              <label class="fld">Chance
+              <label class="fld">Chance to act per check-in
                 <div id="autopilot-chance-slot"></div>
               </label>
             </div>
