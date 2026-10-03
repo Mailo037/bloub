@@ -1,14 +1,13 @@
-import { initDictation } from './dictation'
 import { initLiveVoice } from './live-voice'
-import { initModelSelector } from './model-selector'
 /**
  * Chat-Dock im Pet-Fenster: Eingabe-Pill plus Antwort unter dem Ball. Kein
  * eigenes Fenster mehr — der Bloub spricht direkt unter sich. Wird von
  * pet.ts gemountet; Sichtbarkeit steuert main.cjs ueber chat:visibility.
  */
-import { getBridge, createSvgIcon, type ChatEvent, type AttachChip, type Grant, type ChatSummary, type ChatSearchResult } from './shared'
+import { getBridge, createSvgIcon, type ChatEvent, type AttachChip, type Grant } from './shared'
 import { COLOR_BY_ID, DEFAULT_COLOR } from '../vendor/bot/skins'
 import { renderMarkdownLite } from './markdown-lite'
+import { friendlyError } from './chat-format'
 
 export interface MountChatCallbacks {
   onThinkingStart?: () => void
@@ -370,7 +369,8 @@ function renderChips() {
     const text = input.value.trim()
     if (!text && fileChips.length === 0) return
     stopSpeech()
-    const attachmentIds = fileChips.filter((c) => !c.note).map((c) => c.id)
+    // Chips ohne echte Anhang-ID (nicht unterstuetzte Typen) sind nur Hinweise
+    const attachmentIds = fileChips.filter((c) => !c.id.startsWith('info-')).map((c) => c.id)
     fileChips = []
     input.value = ''
     autosizeInput()
@@ -388,8 +388,9 @@ function renderChips() {
     root.classList.remove('hidden', 'closing')
     reply.classList.remove('hidden')
     replyBody.classList.remove('error')
+    replyBody.removeAttribute('title')
     setGlimmer(true)
-    setStatusLine('thinking …')
+    setStatusLine('Thinking…')
     renderChips()
     callbacks?.onThinkingStart?.()
     void bridge.sendChat?.({ text, attachmentIds })
@@ -423,29 +424,42 @@ function renderChips() {
     }
   })
 
-  // Paste: Text inline, Bilder als Attachment-Chip
+  // Paste: Text inline, Dateien und Bilder als Attachment-Chip
   input.addEventListener('paste', (e) => {
-    const items = Array.from(e.clipboardData?.items ?? [])
-    for (const item of items) {
-      if (item.kind === 'file') {
-        const f = item.getAsFile()
-        if (!f) continue
-        e.preventDefault()
-        addFileChip(f)
-      }
-    }
+    const files = Array.from(e.clipboardData?.items ?? [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => !!f)
+    if (files.length === 0) return
+    e.preventDefault()
+    for (const f of files) void addFileChip(f)
   })
 
-  function addFileChip(f: File) {
+  /**
+   * Eingefuegte Datei beim Main registrieren — nur dessen Anhang-IDs kennt
+   * buildUserParts. Ohne Pfad (Screenshot aus der Zwischenablage) wird das
+   * Bild als Daten uebergeben. Kein automatischer Turn: gesendet wird mit Enter.
+   */
+  async function addFileChip(f: File) {
     const path = bridge.pathForFile?.(f)
-    const kind = f.type.startsWith('image/') ? 'image' : 'text'
-    fileChips.push({
-      kind,
-      id: path ?? `clip-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      name: f.name || f.type || 'clipboard',
-      size: f.size,
-      note: !path ? 'pasted image' : undefined
-    })
+    let chips: AttachChip[] = []
+    if (path) {
+      chips = (await bridge.attachPaths?.([path], { inspect: false }))?.chips ?? []
+    } else if (f.type.startsWith('image/')) {
+      const data = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
+        r.onerror = () => reject(r.error)
+        r.readAsDataURL(f)
+      }).catch(() => '')
+      const res = data ? await bridge.attachData?.({ name: f.name, mime: f.type, data }) : undefined
+      if (res?.ok && res.chip) chips = [res.chip]
+    }
+    for (const chip of chips) {
+      // Ordner-Grants zeigt renderChips ueber die Config; nur echte Anhaenge hier
+      if (chip.kind === 'grant') continue
+      fileChips.push({ ...chip, id: chip.id ?? `info-${Date.now()}-${Math.random().toString(36).slice(2)}` })
+    }
     renderChips()
   }
 
@@ -503,6 +517,11 @@ function renderChips() {
         setStatusLine(ev.text)
         break
       case 'accepted': {
+        // Datei-Drop wird automatisch inspiziert: diese Chips sind damit verbraucht.
+        if (ev.attachments?.length) {
+          fileChips = fileChips.filter((c) => !ev.attachments.includes(c.id))
+          renderChips()
+        }
         // Auto-Turn vom Main (z. B. nach File-Drop): wie ein eigener Send
         // behandeln, damit der Chat-Dock korrekt startet.
         if (!streaming) {
@@ -513,8 +532,9 @@ function renderChips() {
           root.classList.remove('hidden', 'closing')
           reply.classList.remove('hidden')
           replyBody.classList.remove('error')
+          replyBody.removeAttribute('title')
           setGlimmer(true)
-          setStatusLine('thinking …')
+          setStatusLine('Thinking…')
           callbacks?.onThinkingStart?.()
         }
         break
@@ -567,7 +587,7 @@ function renderChips() {
             replyBody.appendChild(note)
           }
         } else {
-          replyBody.replaceChildren(document.createTextNode('(no response received — check API key in settings)'))
+          replyBody.replaceChildren(document.createTextNode("Bloub didn't answer this time. Try again — if it keeps happening, check Settings → Connections."))
         }
         scrollReply(false)
         replyAudio.disabled = !buffer.trim()
@@ -586,7 +606,15 @@ function renderChips() {
         root.classList.remove('hidden')
         reply.classList.remove('hidden')
         replyBody.classList.add('error')
-        replyBody.replaceChildren(document.createTextNode(ev.message || 'Error communicating with provider'))
+        const info = friendlyError(ev.message)
+        const title = document.createElement('strong')
+        title.className = 'error-title'
+        title.textContent = info.title
+        const hint = document.createElement('span')
+        hint.className = 'error-hint'
+        hint.textContent = info.hint
+        replyBody.title = info.detail
+        replyBody.replaceChildren(title, hint)
         replyAudio.disabled = true
         scrollReply(false)
         callbacks?.onTurnEnd?.(false)
@@ -1246,646 +1274,4 @@ function renderChips() {
   const liveVoice = initLiveVoice(root, micHoldBtn, active => callbacks?.onListeningChange?.(active))
   bridge.onChatVisibility?.(visible => { if (!visible && liveVoice.active) liveVoice.stop() })
   window.addEventListener('keydown', event => { if (event.key === 'Escape' && liveVoice.active) { liveVoice.stop(); event.stopImmediatePropagation() } }, true)
-}
-
-/* =====================================================================
-   Standalone Chat Window Application
-   ===================================================================== */
-
-function initStandaloneChat(): void {
-  const bridge = getBridge()
-  const winMin = document.getElementById('win-min') as HTMLButtonElement | null
-  const winMax = document.getElementById('win-max') as HTMLButtonElement | null
-  const winClose = document.getElementById('win-close') as HTMLButtonElement | null
-  const toggleHistoryBtn = document.getElementById('toggle-history-btn') as HTMLButtonElement | null
-  const closeHistoryBtn = document.getElementById('close-history-btn') as HTMLButtonElement | null
-  const historyDrawer = document.getElementById('history-drawer') as HTMLElement | null
-  const historySearchInput = document.getElementById('history-search-input') as HTMLInputElement | null
-  const historyList = document.getElementById('history-list') as HTMLElement | null
-  const newChatBtn = document.getElementById('new-chat-btn') as HTMLButtonElement | null
-  const currentChatTitle = document.getElementById('current-chat-title') as HTMLElement | null
-  const renameChatInput = document.getElementById('rename-chat-input') as HTMLInputElement | null
-  const emptyState = document.getElementById('empty-state') as HTMLElement | null
-  const recentChatsList = document.getElementById('recent-chats-list') as HTMLElement | null
-  const btnShowAllChats = document.getElementById('btn-show-all-chats') as HTMLButtonElement | null
-  const messagesContainer = document.getElementById('messages-container') as HTMLElement | null
-  const chatNotesBar = document.getElementById('chat-notes-bar') as HTMLElement | null
-  const composerAttachBtn = document.getElementById('composer-attach-btn') as HTMLButtonElement | null
-  const hiddenFileInput = document.getElementById('hidden-file-input') as HTMLInputElement | null
-  const standaloneInput = document.getElementById('standalone-input') as HTMLTextAreaElement | null
-  const composerMicBtn = document.getElementById('composer-mic-btn') as HTMLButtonElement | null
-  const standaloneSendBtn = document.getElementById('standalone-send-btn') as HTMLButtonElement | null
-  const sendIcon = document.getElementById('send-icon') as HTMLElement | null
-  const stopIcon = document.getElementById('stop-icon') as HTMLElement | null
-  initModelSelector(bridge)
-
-  if (!standaloneInput || !standaloneSendBtn) return
-
-  let activeChatId = 'default'
-  const generatingByChat = new Map<string, boolean>()
-  const workingByChat = new Map<string, boolean>()
-  const workingIndicator = document.createElement('div')
-  workingIndicator.className = 'chat-working hidden'
-  workingIndicator.setAttribute('role', 'status')
-  workingIndicator.setAttribute('aria-live', 'polite')
-  workingIndicator.innerHTML = '<span class="chat-working-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Bloub is working…</span>'
-  function renderWorkingIndicator() {
-    const visible = !!generatingByChat.get(activeChatId) && !!workingByChat.get(activeChatId)
-    workingIndicator.classList.toggle('hidden', !visible)
-    messagesContainer?.append(workingIndicator)
-    if (visible) {
-      emptyState?.classList.add('hidden')
-      messagesContainer?.classList.remove('hidden')
-      scrollToBottom()
-    }
-  }
-  const streamingTextByChat = new Map<string, string>()
-  // Chats whose current turn was sent from THIS window — their accepted echo
-  // must not render a duplicate bubble (triggerSend already rendered it).
-  const selfSentByChat = new Set<string>()
-  let activeAssistantBubble: HTMLElement | null = null
-  let activeAttachments: AttachChip[] = []
-
-  // Window controls
-  winMin?.addEventListener('click', () => bridge.minimizeChatWindow?.())
-  winMax?.addEventListener('click', () => bridge.maximizeChatWindow?.())
-  winClose?.addEventListener('click', () => bridge.closeChatWindow?.())
-
-  // Drawer toggling
-  const openDrawer = () => {
-    historyDrawer?.classList.remove('hidden')
-    refreshHistory()
-    historySearchInput?.focus()
-  }
-  const closeDrawer = () => {
-    historyDrawer?.classList.add('hidden')
-  }
-  toggleHistoryBtn?.addEventListener('click', () => {
-    if (historyDrawer?.classList.contains('hidden')) openDrawer()
-    else closeDrawer()
-  })
-  closeHistoryBtn?.addEventListener('click', closeDrawer)
-  btnShowAllChats?.addEventListener('click', openDrawer)
-
-  // Measure the actual compact layout on every input, then apply the final
-  // layout synchronously (no intermediate frame). Never measure a tall input
-  // to decide whether it fits beside the tools; that makes the state oscillate.
-  function refreshComposerLayout() {
-    if (!standaloneInput) return
-    const pill = standaloneInput.closest<HTMLElement>('.composer-pill')
-    if (!pill || pill.classList.contains('dictating')) return
-    const attach = pill.querySelector('#composer-attach-btn')
-    const actions = pill.querySelector('.composer-actions')
-    if (!attach || !actions) return
-    const scrollTop = standaloneInput.scrollTop
-    pill.classList.remove('composer-tall')
-    standaloneInput.before(attach)
-    standaloneInput.style.height = '30px'
-    const stack = standaloneInput.value.length > 0 && standaloneInput.scrollHeight > standaloneInput.clientHeight
-    pill.classList.toggle('composer-tall', stack)
-    if (stack) {
-      actions.before(attach)
-      // Measure height only AFTER the input has its final full-row width.
-      standaloneInput.style.height = '30px'
-      standaloneInput.style.height = `${Math.min(standaloneInput.scrollHeight, 140)}px`
-    }
-    standaloneInput.scrollTop = scrollTop
-  }
-  standaloneInput.addEventListener('input', refreshComposerLayout)
-  window.addEventListener('resize', refreshComposerLayout)
-  refreshComposerLayout()
-
-  // Keyboard shortcut: Enter sends, Shift+Enter newline
-  standaloneInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      triggerSend()
-    }
-  })
-
-  // Rename handling
-  currentChatTitle?.addEventListener('click', () => {
-    if (!renameChatInput || !currentChatTitle) return
-    currentChatTitle.classList.add('hidden')
-    renameChatInput.classList.remove('hidden')
-    renameChatInput.value = currentChatTitle.textContent ?? ''
-    renameChatInput.focus()
-    renameChatInput.select()
-  })
-
-  const saveRename = async () => {
-    if (!renameChatInput || !currentChatTitle) return
-    const newTitle = renameChatInput.value.trim()
-    renameChatInput.classList.add('hidden')
-    currentChatTitle.classList.remove('hidden')
-    if (newTitle && newTitle !== currentChatTitle.textContent) {
-      currentChatTitle.textContent = newTitle
-      await bridge.renameChat?.(activeChatId, newTitle)
-      refreshHistory()
-    }
-  }
-
-  renameChatInput?.addEventListener('blur', saveRename)
-  renameChatInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      renameChatInput?.blur()
-    } else if (e.key === 'Escape') {
-      if (renameChatInput && currentChatTitle) {
-        renameChatInput.value = currentChatTitle.textContent ?? ''
-        renameChatInput.classList.add('hidden')
-        currentChatTitle.classList.remove('hidden')
-      }
-    }
-  })
-
-  // New Chat
-  newChatBtn?.addEventListener('click', async () => {
-    const session = await bridge.newChat?.()
-    if (session) {
-      switchToChat(session.id)
-    }
-  })
-
-  // File attach handling
-  composerAttachBtn?.addEventListener('click', () => {
-    hiddenFileInput?.click()
-  })
-  hiddenFileInput?.addEventListener('change', async () => {
-    const files = Array.from(hiddenFileInput?.files || [])
-    if (!files.length) return
-    const paths = files.map((f) => bridge.pathForFile?.(f) || '').filter(Boolean)
-    if (paths.length && bridge.attachPaths) {
-      const res = await bridge.attachPaths(paths) as unknown as { ok?: boolean; chips?: AttachChip[] }
-      if (res?.chips) {
-        for (const chip of res.chips) {
-          if (!activeAttachments.some((a) => a.id === chip.id)) {
-            activeAttachments.push(chip)
-          }
-        }
-        renderAttachmentChips()
-      }
-    }
-    if (hiddenFileInput) hiddenFileInput.value = ''
-  })
-
-  function renderAttachmentChips() {
-    if (!chatNotesBar) return
-    if (activeAttachments.length === 0) {
-      chatNotesBar.classList.add('hidden')
-      chatNotesBar.innerHTML = ''
-      return
-    }
-    chatNotesBar.classList.remove('hidden')
-    chatNotesBar.innerHTML = ''
-    for (const chip of activeAttachments) {
-      const el = document.createElement('span')
-      el.className = 'activity-note-pill'
-      el.innerHTML = `📎 ${escapeHtml(chip.name)} <button type="button" class="remove-chip-btn" style="background:none;border:none;color:inherit;cursor:pointer;margin-left:4px">✕</button>`
-      el.querySelector('.remove-chip-btn')!.addEventListener('click', () => {
-        activeAttachments = activeAttachments.filter((a) => a.id !== chip.id)
-        renderAttachmentChips()
-      })
-      chatNotesBar.appendChild(el)
-    }
-  }
-
-  // Refresh history list (supports query with bridge.searchChats)
-  async function refreshHistory(filter = '') {
-    if (!bridge.listChats || !historyList) return
-    const query = filter.trim()
-    historyList.innerHTML = ''
-
-    if (query && bridge.searchChats) {
-      const searchResults = await bridge.searchChats(query)
-      for (const res of searchResults) {
-        const item = document.createElement('div')
-        item.className = `history-item ${res.id === activeChatId ? 'active' : ''}`
-        item.innerHTML = `
-          <div class="history-item-content">
-            <span class="history-item-title">${escapeHtml(res.title)}</span>
-            <span class="history-item-meta">${escapeHtml(res.snippet || 'Match')}</span>
-          </div>
-        `
-        item.addEventListener('click', () => {
-          switchToChat(res.id)
-          closeDrawer()
-        })
-        historyList.appendChild(item)
-      }
-      return
-    }
-
-    const allChats = await bridge.listChats()
-    for (const chat of allChats) {
-      const snippet = chat.lastSnippet || chat.lastMessage || ''
-      const item = document.createElement('div')
-      item.className = `history-item ${chat.id === activeChatId ? 'active' : ''}`
-      item.innerHTML = `
-        <div class="history-item-content">
-          <span class="history-item-title">${escapeHtml(chat.title)}</span>
-          ${snippet ? `<span class="history-item-meta">${escapeHtml(snippet)}</span>` : ''}
-        </div>
-        <div class="history-item-actions">
-          <button class="item-action-btn more" title="Manage chat" aria-label="Manage chat" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
-          <div class="history-action-menu hidden">
-            <button class="item-action-btn regen-title">Regenerate title</button>
-            <button class="item-action-btn archive">Archive</button>
-          </div>
-        </div>
-      `
-      const more = item.querySelector<HTMLButtonElement>('.more')!
-      const menu = item.querySelector<HTMLElement>('.history-action-menu')!
-      const hideMenu = () => { menu.classList.add('hidden'); more.setAttribute('aria-expanded', 'false') }
-      more.onclick = () => {
-        const open = menu.classList.contains('hidden')
-        historyList.querySelectorAll('.history-action-menu').forEach(m => m.classList.add('hidden'))
-        historyList.querySelectorAll('.more').forEach(b => b.setAttribute('aria-expanded', 'false'))
-        if (open) {
-          menu.classList.remove('hidden')
-          more.setAttribute('aria-expanded', 'true')
-          const r = more.getBoundingClientRect()
-          menu.style.left = Math.max(8, Math.min(r.right - 190, window.innerWidth - 198)) + 'px'
-          menu.style.top = Math.max(8, Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8)) + 'px'
-        }
-      }
-      item.addEventListener('focusout', e => { if (!item.contains(e.relatedTarget as Node)) hideMenu() })
-      item.addEventListener('keydown', e => { if (e.key === 'Escape') { hideMenu(); more.focus() } })
-      const content = item.querySelector<HTMLElement>('.history-item-content')!
-      content.tabIndex = 0
-      content.setAttribute('role', 'button')
-      content.setAttribute('aria-label', chat.title)
-      content.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); content.click() } })
-      item.querySelector('.history-item-content')!.addEventListener('click', () => {
-        switchToChat(chat.id)
-        closeDrawer()
-      })
-      item.querySelector('.item-action-btn.regen-title')!.addEventListener('click', async (e) => {
-        e.stopPropagation()
-        hideMenu()
-        const newTitle = await bridge.regenerateChatTitle?.(chat.id)
-        if (newTitle && activeChatId === chat.id && currentChatTitle) {
-          currentChatTitle.textContent = newTitle
-        }
-        refreshHistory(historySearchInput?.value || '')
-      })
-      item.querySelector('.item-action-btn.archive')!.addEventListener('click', async (e) => {
-        e.stopPropagation()
-        hideMenu()
-        await bridge.archiveChat?.(chat.id)
-        if (activeChatId === chat.id) {
-          const fresh = await bridge.newChat?.()
-          if (fresh) switchToChat(fresh.id)
-        } else {
-          refreshHistory(historySearchInput?.value || '')
-        }
-      })
-      historyList.appendChild(item)
-    }
-
-    // Also update recent chats on empty state
-    if (recentChatsList) {
-      recentChatsList.innerHTML = ''
-      const recents = allChats.filter(c => c.id !== activeChatId).slice(0, 3)
-      for (const c of recents) {
-        const date = new Date(c.updatedAt || c.createdAt || 0)
-        const today = new Date()
-        const yesterday = new Date(today)
-        yesterday.setDate(today.getDate() - 1)
-        const dateLabel = date.toDateString() === today.toDateString() ? 'Today'
-          : date.toDateString() === yesterday.toDateString() ? 'Yesterday'
-          : date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
-        const chip = document.createElement('button')
-        chip.type = 'button'
-        chip.className = 'recent-chat-chip'
-        chip.innerHTML = `
-          <div class="recent-chat-chip-title">${escapeHtml(c.title)}</div>
-          <span class="recent-chat-chip-date">${escapeHtml(dateLabel)}</span>
-        `
-        chip.addEventListener('click', () => {
-          switchToChat(c.id)
-        })
-        recentChatsList.appendChild(chip)
-      }
-    }
-  }
-
-  historySearchInput?.addEventListener('input', () => {
-    refreshHistory(historySearchInput.value)
-  })
-
-  // Switch chat: preserves messages and in-flight generation state
-  async function switchToChat(chatId: string) {
-    activeChatId = chatId
-    await bridge.selectChat?.(chatId)
-    const chat = await bridge.getChat?.(chatId)
-    if (currentChatTitle) {
-      currentChatTitle.textContent = chat?.title || 'Chat'
-    }
-
-    if (messagesContainer) {
-      messagesContainer.innerHTML = ''
-      const records = chat?.records || []
-      const isChatGenerating = !!generatingByChat.get(chatId)
-      const currentStreaming = streamingTextByChat.get(chatId) || ''
-
-      if (records.length === 0 && !isChatGenerating) {
-        emptyState?.classList.remove('hidden')
-        messagesContainer.classList.add('hidden')
-      } else {
-        emptyState?.classList.add('hidden')
-        messagesContainer.classList.remove('hidden')
-        for (const rec of records) {
-          if (rec.role === 'user') {
-            const text = rec.parts?.[0]?.text || rec.content || ''
-            appendMessageBubble('user', text)
-          } else if (rec.role === 'assistant') {
-            appendMessageBubble('assistant', rec.content || '')
-          }
-        }
-        if (isChatGenerating) {
-          const row = document.createElement('div')
-          row.className = 'message-row assistant'
-          const content = document.createElement('div')
-          content.className = 'assistant-content'
-          content.replaceChildren(renderMarkdownLite(currentStreaming))
-          row.appendChild(content)
-          appendCopyButton(row, content)
-          messagesContainer.appendChild(row)
-          activeAssistantBubble = content
-        } else {
-          activeAssistantBubble = null
-        }
-        scrollToBottom()
-      }
-      setGenerating(isChatGenerating)
-    }
-    refreshHistory()
-  }
-
-  /** Assistant placeholder for turns that started outside this window. */
-  function ensureAssistantBubble(): HTMLElement | null {
-    if (!messagesContainer) return null
-    const existing = messagesContainer.querySelector<HTMLElement>('.message-row.assistant:last-of-type .assistant-content')
-    if (existing && !existing.textContent?.trim()) return existing
-    const row = document.createElement('div')
-    row.className = 'message-row assistant'
-    const content = document.createElement('div')
-    content.className = 'assistant-content'
-    row.appendChild(content)
-    appendCopyButton(row, content)
-    messagesContainer.appendChild(row)
-    activeAssistantBubble = content
-    scrollToBottom()
-    return content
-  }
-
-  function appendCopyButton(row: HTMLElement, content: HTMLElement) {    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'message-copy'
-    button.title = 'Copy message'
-    button.setAttribute('aria-label', 'Copy message')
-    button.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><span>Copy</span>'
-    const label = button.querySelector('span')!
-    label.setAttribute('aria-live', 'polite')
-    let reset: ReturnType<typeof setTimeout> | undefined
-    button.addEventListener('click', async () => {
-      // Read at click time so streaming messages copy their latest text.
-      const text = content.innerText
-      if (!text.trim()) return
-      clearTimeout(reset)
-      try {
-        await navigator.clipboard.writeText(text)
-        label.textContent = 'Copied'
-      } catch {
-        label.textContent = 'Copy failed'
-      }
-      reset = setTimeout(() => { label.textContent = 'Copy' }, 1800)
-    })
-    row.append(button)
-  }
-
-  function appendMessageBubble(role: 'user' | 'assistant', text: string): HTMLElement {
-    emptyState?.classList.add('hidden')
-    messagesContainer?.classList.remove('hidden')
-    const row = document.createElement('div')
-    row.className = `message-row ${role}`
-    if (role === 'user') {
-      const bubble = document.createElement('div')
-      bubble.className = 'user-bubble'
-      bubble.textContent = text
-      row.appendChild(bubble)
-      appendCopyButton(row, bubble)
-    } else {
-      const content = document.createElement('div')
-      content.className = 'assistant-content'
-      content.replaceChildren(renderMarkdownLite(text))
-      row.appendChild(content)
-      appendCopyButton(row, content)
-    }
-    messagesContainer?.appendChild(row)
-    scrollToBottom()
-    return row
-  }
-
-  function scrollToBottom() {
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight
-    }
-  }
-
-  function escapeHtml(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  }
-
-  function setGenerating(generating: boolean) {
-    if (!generating) workingByChat.delete(activeChatId)
-    renderWorkingIndicator()
-    sendIcon?.classList.toggle('hidden', generating)
-    stopIcon?.classList.toggle('hidden', !generating)
-    standaloneSendBtn?.classList.toggle('stop', generating)
-    if (standaloneSendBtn) {
-      standaloneSendBtn.title = generating ? 'Stop generating' : 'Send'
-      standaloneSendBtn.setAttribute('aria-label', standaloneSendBtn.title)
-    }
-  }
-
-  async function triggerSend() {
-    if (standaloneInput?.closest('.composer-pill')?.classList.contains('dictating')) return
-    if (generatingByChat.get(activeChatId)) {
-      bridge.abortChat?.(activeChatId)
-      generatingByChat.set(activeChatId, false)
-      setGenerating(false)
-      return
-    }
-    const text = standaloneInput?.value.trim() || ''
-    if (!text && activeAttachments.length === 0) return
-
-    if (standaloneInput) {
-      standaloneInput.value = ''
-      refreshComposerLayout()
-    }
-
-    const toSendIds = activeAttachments.map((a) => a.id).filter(Boolean) as string[]
-    activeAttachments = []
-    renderAttachmentChips()
-
-    appendMessageBubble('user', text)
-    generatingByChat.set(activeChatId, true)
-    workingByChat.set(activeChatId, true)
-    streamingTextByChat.set(activeChatId, '')
-    setGenerating(true)
-
-    // Create placeholder assistant row
-    const row = document.createElement('div')
-    row.className = 'message-row assistant'
-    const content = document.createElement('div')
-    content.className = 'assistant-content'
-    row.appendChild(content)
-    appendCopyButton(row, content)
-    messagesContainer?.appendChild(row)
-    activeAssistantBubble = content
-    renderWorkingIndicator()
-    scrollToBottom()
-
-    const sentChatId = activeChatId
-    selfSentByChat.add(sentChatId)
-    try {
-      await bridge.sendChat?.({
-        text,
-        attachmentIds: toSendIds,
-        chatId: sentChatId
-      })
-    } catch (err) {
-      generatingByChat.set(sentChatId, false)
-      workingByChat.delete(sentChatId)
-      if (activeChatId === sentChatId) {
-        setGenerating(false)
-        const errNotice = document.createElement('div')
-        errNotice.className = 'error-notice'
-        errNotice.textContent = `Failed to send: ${err instanceof Error ? err.message : String(err)}`
-        activeAssistantBubble?.appendChild(errNotice)
-      }
-    }
-  }
-
-  standaloneSendBtn.addEventListener('click', triggerSend)
-
-  const dictation = initDictation(bridge, standaloneInput, composerMicBtn, triggerSend, () => activeChatId)
-  const startStandaloneRecording = () => dictation.start()
-  const stopStandaloneRecording = () => dictation.stop()
-
-  // Route PTT events if chat window is focused
-  bridge.onPttStart?.(() => {
-    if (document.hasFocus()) {
-      void startStandaloneRecording()
-    }
-  })
-  bridge.onPttEnd?.(() => {
-    if (dictation.isRecording) {
-      stopStandaloneRecording()
-    }
-  })
-
-  // Listen to bridge events
-  bridge.onChatEvent?.((ev) => {
-    const targetChat = ev.chatId || activeChatId
-
-    if (ev.type === 'accepted' || ev.type === 'tools' || ev.type === 'status') {
-      const wasGenerating = !!generatingByChat.get(targetChat)
-      generatingByChat.set(targetChat, true)
-      workingByChat.set(targetChat, true)
-      if (ev.type === 'accepted') {
-        // A turn started outside this window (pet dock, autopilot): render its
-        // user text and an assistant placeholder so tokens have a target.
-        if (!selfSentByChat.has(targetChat) && !wasGenerating) {
-          if (targetChat === activeChatId) {
-            if (ev.chipText) appendMessageBubble('user', ev.chipText)
-            ensureAssistantBubble()
-          }
-          streamingTextByChat.set(targetChat, '')
-        }
-      }
-      if (targetChat === activeChatId) setGenerating(true)
-    } else if (ev.type === 'token') {
-      workingByChat.set(targetChat, false)
-      if (targetChat === activeChatId) {
-        // Tokens can arrive before this window saw the accepted echo (dock
-        // turn started while the window was opening): create the placeholder
-        // on demand so the reply is never lost.
-        if (!activeAssistantBubble) ensureAssistantBubble()
-        renderWorkingIndicator()
-      }
-      const current = (streamingTextByChat.get(targetChat) || '') + ev.text
-      streamingTextByChat.set(targetChat, current)
-      if (targetChat === activeChatId && activeAssistantBubble) {
-        activeAssistantBubble.replaceChildren(renderMarkdownLite(current))
-        scrollToBottom()
-      }
-    } else if (ev.type === 'note') {
-      if (targetChat === activeChatId && chatNotesBar) {
-        chatNotesBar.classList.remove('hidden')
-        const pill = document.createElement('span')
-        pill.className = 'activity-note-pill'
-        pill.textContent = ev.text
-        chatNotesBar.appendChild(pill)
-        setTimeout(() => pill.remove(), 4000)
-      }
-    } else if (ev.type === 'attachments') {
-      if (targetChat === activeChatId && ev.chips) {
-        for (const c of ev.chips) {
-          if (!activeAttachments.some((a) => a.id === c.id)) {
-            activeAttachments.push(c)
-          }
-        }
-        renderAttachmentChips()
-      }
-    } else if (ev.type === 'title') {
-      if (ev.title) {
-        if (targetChat === activeChatId && currentChatTitle) {
-          currentChatTitle.textContent = ev.title
-        }
-        refreshHistory()
-      }
-    } else if (ev.type === 'clear') {
-      workingByChat.set(targetChat, true)
-      if (targetChat === activeChatId) renderWorkingIndicator()
-      streamingTextByChat.set(targetChat, '')
-      if (targetChat === activeChatId && activeAssistantBubble) {
-        activeAssistantBubble.innerHTML = ''
-      }
-    } else if (ev.type === 'done') {
-      generatingByChat.set(targetChat, false)
-      streamingTextByChat.delete(targetChat)
-      selfSentByChat.delete(targetChat)
-      if (targetChat === activeChatId) {
-        setGenerating(false)
-        activeAssistantBubble = null
-        refreshHistory()
-      }
-    } else if (ev.type === 'error') {
-      generatingByChat.set(targetChat, false)
-      selfSentByChat.delete(targetChat)
-      if (targetChat === activeChatId) {
-        setGenerating(false)
-        if (activeAssistantBubble) {
-          const errNotice = document.createElement('div')
-          errNotice.className = 'error-notice'
-          errNotice.textContent = `Error: ${ev.message}`
-          activeAssistantBubble.appendChild(errNotice)
-        }
-      }
-    }
-  })
-
-  // Start with active chat
-  bridge.getActiveChat?.().then((id) => {
-    switchToChat(id || 'default')
-  }).catch(() => {
-    switchToChat('default')
-  })
-}
-
-if (typeof document !== 'undefined' && document.getElementById('standalone-chat')) {
-  initStandaloneChat()
 }

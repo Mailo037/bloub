@@ -21,7 +21,7 @@ export function initDictation(bridge: ReturnType<typeof getBridge>, input: HTMLT
     stopButton.disabled = next !== 'recording'
     sendButton.disabled = next !== 'recording'
     input.readOnly = next !== 'idle'
-    if (mic) { mic.disabled = next !== 'idle'; mic.title = next === 'starting' ? 'Starting dictation…' : 'Voice input' }
+    if (mic) { mic.disabled = next !== 'idle'; mic.title = next === 'starting' ? 'Starting dictation…' : 'Dictate a message' }
   }
   function release() {
     cancelAnimationFrame(frame)

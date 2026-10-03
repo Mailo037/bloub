@@ -233,7 +233,13 @@ export interface ChatSearchResult {
 export interface ChatRecord {
   role: string
   content?: string
-  parts?: Array<{ type: string; text?: string }>
+  parts?: Array<{ type: string; text?: string; mime?: string; data?: string }>
+  toolCalls?: Array<{ id?: string; name: string; argsJson?: string }>
+  /** Tool-Ergebnis: zu welchem Call es gehoert */
+  toolCallId?: string
+  truncated?: boolean
+  isError?: boolean
+  ts?: number
 }
 
 export interface ChatDetail extends ChatSummary {
@@ -334,7 +340,10 @@ export interface PetBridge {
   quit(): void
   /* chat summon + drop target (pet window) */
   toggleChat?(): void
-  attachPaths?(paths: string[]): Promise<void>
+  /** Dateien anhaengen; { inspect: false } = nur Chips liefern, kein automatischer Turn. */
+  attachPaths?(paths: string[], opts?: { inspect?: boolean }): Promise<{ ok: boolean; chips: AttachChip[] } | undefined>
+  /** Eingefuegtes Bild ohne Dateipfad (Zwischenablage) als Anhang ablegen. */
+  attachData?(payload: { name?: string; mime: string; data: string }): Promise<{ ok: boolean; chip?: AttachChip; error?: string }>
   pathForFile?(file: File): string
   onPlayState?(cb: (id: string, duration?: number) => void): void
   /** Animations-Lock vom Main: haelt den Zustand, bis die Aktion fertig ist. */
@@ -349,6 +358,8 @@ export interface PetBridge {
   onGlobalCursor?(cb: (p: GlobalCursorInfo) => void): void
   /* chat window */
   sendChat?(payload: { text: string; attachmentIds: string[]; chatId?: string }): Promise<boolean>
+  /** Letzten User-Turn erneut ausfuehren (Retry nach Fehler / Regenerate). */
+  retryChat?(chatId: string): Promise<boolean>
   /** Chat-Dock IMMER oeffnen (Kontextmenue "Open input") — togglet nie. */
   showChat?(): void
   abortChat?(chatId?: string): void
